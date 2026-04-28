@@ -780,3 +780,163 @@ def on_stock_entry_submit(doc, method):
     except Exception as e:
         frappe.log_error(str(e), f"ZRA Stock Entry Failed: {doc.name}")
         frappe.throw(f"ZRA connection failed: {str(e)} — Stock Entry NOT submitted.")
+
+
+
+def on_stock_entry_submit(doc, method):
+    try:
+        # Step 1 — saveStockItems
+        stock_payload = _build_stock_items_payload(doc)
+        result1 = make_vsdc_request("stock/saveStockItems", stock_payload)
+
+        if result1.get("resultCd") != "000":
+            frappe.throw(f"ZRA Stock Items Failed: {result1.get('resultMsg')}")
+
+        # Step 2 — saveStockMaster (saveStockItems ke baad call karo)
+        master_payload = _build_stock_master_payload(doc)
+        result2 = make_vsdc_request("stockMaster/saveStockMaster", master_payload)
+
+        if result2.get("resultCd") != "000":
+            frappe.throw(f"ZRA Stock Master Failed: {result2.get('resultMsg')}")
+
+        frappe.log_error(
+            title=f"ZRA Stock Success | {doc.name}",
+            message=f"saveStockItems: {result1} | saveStockMaster: {result2}"
+        )
+
+    except Exception as e:
+        frappe.log_error(
+            title=f"ZRA Stock Submit Error | {doc.name}",
+            message=frappe.get_traceback()
+        )
+        frappe.throw(f"ZRA Stock sync failed: {str(e)}")
+
+
+def _build_stock_items_payload(doc):
+    company = frappe.defaults.get_user_default("Company")
+    
+    item_list = []
+    total_taxable = 0
+    total_tax = 0
+    total_amt = 0
+
+    for idx, item in enumerate(doc.items, start=1):
+        # Item details fetch karo
+        item_doc = frappe.get_doc("Item", item.item_code)
+        
+        item_class_code = frappe.db.get_value(
+            "Custom Item Details",
+            {"parent": item.item_code},
+            "hsn_code"
+        ) or ""
+
+        pkg_unit = frappe.db.get_value(
+            "Custom Item Details",
+            {"parent": item.item_code},
+            "packing_unit"
+        ) or "BA"
+
+        qty = item.qty or 0
+        rate = item.basic_rate or item.valuation_rate or 0
+        sply_amt = qty * rate
+        taxable_amt = round(sply_amt / 1.16, 4)  # VAT 16% assume
+        tax_amt = round(sply_amt - taxable_amt, 4)
+
+        total_taxable += taxable_amt
+        total_tax += tax_amt
+        total_amt += sply_amt
+
+        exp_date = ""
+        if item.batch_no:
+            exp = frappe.db.get_value("Batch", item.batch_no, "expiry_date")
+            exp_date = str(exp).replace("-", "") if exp else ""
+
+        item_list.append({
+            "itemSeq": idx,
+            "itemCd": item.item_code,
+            "itemClsCd": item_class_code,
+            "itemNm": item.item_name,
+            "pkgUnitCd": pkg_unit,
+            "qtyUnitCd": item.uom or "U",
+            "qty": qty,
+            "prc": rate,
+            "splyAmt": round(sply_amt, 2),
+            "taxblAmt": round(taxable_amt, 4),
+            "vatCatCd": "A",
+            "taxAmt": round(tax_amt, 4),
+            "totAmt": round(sply_amt, 2),
+            "totDcAmt": 0,
+            "iplCatCd": "IPLEXM",
+            "tlCatCd": "TLEXM",
+            "exciseTxCatCd": "EXEEG",
+            "iplAmt": 0,
+            "tlAmt": 0,
+            "exciseTxAmt": 0,
+            "itemExprDt": exp_date,
+            "pkg": item.qty or 0,
+            "bcd": ""
+        })
+
+    return {
+        "sarNo": _get_next_sar_no(),
+        "orgSarNo": 0,
+        "regTyCd": "M",
+        "sarTyCd": _get_sar_type(doc.stock_entry_type),
+        "ocrnDt": str(doc.posting_date).replace("-", ""),
+        "totItemCnt": len(item_list),
+        "totTaxblAmt": round(total_taxable, 4),
+        "totTaxAmt": round(total_tax, 4),
+        "totAmt": round(total_amt, 4),
+        "remark": doc.remarks or "",
+        "regrId": doc.owner or "Admin",
+        "regrNm": doc.owner or "Admin",
+        "modrNm": doc.modified_by or "Admin",
+        "modrId": doc.modified_by or "Admin",
+        "itemList": item_list
+    }
+
+
+def _build_stock_master_payload(doc):
+    stock_item_list = []
+
+    for item in doc.items:
+        # Warehouse se current stock dekho
+        rsd_qty = frappe.db.get_value(
+            "Bin",
+            {"item_code": item.item_code, "warehouse": item.t_warehouse or item.s_warehouse},
+            "actual_qty"
+        ) or 0
+
+        stock_item_list.append({
+            "itemCd": item.item_code,
+            "rsdQty": rsd_qty
+        })
+
+    return {
+        "regrId": doc.owner or "Admin",
+        "regrNm": doc.owner or "Admin",
+        "modrNm": doc.modified_by or "Admin",
+        "modrId": doc.modified_by or "Admin",
+        "stockItemList": stock_item_list
+    }
+
+
+def _get_next_sar_no():
+    # Auto increment SAR number
+    last = frappe.db.sql(
+        "SELECT MAX(CAST(meta_value AS UNSIGNED)) FROM `tabSingles` WHERE doctype='ZRA Settings' AND field='last_sar_no'"
+    )
+    next_no = (last[0][0] or 0) + 1
+    frappe.db.set_single_value("ZRA Settings", "last_sar_no", next_no)
+    return next_no
+
+
+def _get_sar_type(stock_entry_type):
+    # Stock Entry Type → ZRA SAR Type Code
+    mapping = {
+        "Material Receipt": "01",    # Purchase
+        "Material Issue": "02",      # Sales
+        "Material Transfer": "13",   # Transfer
+        "Write Off": "06",           # Loss
+    }
+    return mapping.get(stock_entry_type, "02")
