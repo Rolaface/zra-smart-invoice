@@ -19,7 +19,8 @@ def make_vsdc_request(endpoint, payload):
 
     url = f"{config['vsdc_url']}/{endpoint}"
 
-    frappe.logger().info(f"ZRA Request → {url}")
+    # frappe.logger().info(f"ZRA Request → {url}")
+    print(f"ZRA Request → {url}")
 
     try:
         response = requests.post(
@@ -31,10 +32,10 @@ def make_vsdc_request(endpoint, payload):
         response.raise_for_status()
         result = response.json()
 
-        frappe.logger().info(
-            f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}"
-        )
-
+        # frappe.logger().info(
+        #     f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}"
+        # )
+        print(f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}")  # ✅ replace kiya
         return result
 
     except requests.exceptions.ConnectionError:
@@ -42,5 +43,8 @@ def make_vsdc_request(endpoint, payload):
     except requests.exceptions.Timeout:
         frappe.throw("VSDC request timed out.")
     except Exception as e:
-        frappe.log_error(str(e), "ZRA VSDC Error")
+        frappe.log_error(
+            title="ZRA VSDC Error",
+            message=frappe.get_traceback()  # ✅ log_error bhi fix kiya
+        )
         frappe.throw(f"VSDC Error: {str(e)}")
