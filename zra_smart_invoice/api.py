@@ -922,13 +922,9 @@ def _build_stock_master_payload(doc):
 
 
 def _get_next_sar_no():
-    # Auto increment SAR number
-    last = frappe.db.sql(
-        "SELECT MAX(CAST(meta_value AS UNSIGNED)) FROM `tabSingles` WHERE doctype='ZRA Settings' AND field='last_sar_no'"
-    )
-    next_no = (last[0][0] or 0) + 1
-    frappe.db.set_single_value("ZRA Settings", "last_sar_no", next_no)
-    return next_no
+    # Unique SAR No — timestamp based
+    import time
+    return int(time.time())
 
 
 def _get_sar_type(stock_entry_type):
