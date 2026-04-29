@@ -81,23 +81,173 @@ def _build_item_payload(doc):
         "modrNm": _zra_user_id(),
     }
 
+
+def _get_rcpt_type_cd(doc):
+    if doc.is_return:
+        return "R"
+    if hasattr(doc, "is_debit_note") and doc.is_debit_note:
+        return "D"
+    return "S"
+
+
+def _get_vat_cat_cd(doc):
+    """Tax category detect karo"""
+    if doc.tax_category == "Export":
+        return "C1"
+    if doc.tax_category == "Exempt":
+        return "D"
+    return "A"  # Default — Standard VAT
+
+
+def _is_export(doc):
+    return doc.tax_category == "Export"
+
+# def _build_invoice_payload(doc):
+
+#     items = []
+
+#     for item in doc.items:
+#         tax_type = "A"  # VAT 16%
+
+#         qty = round(float(item.qty or 0), 4)
+
+#         prc_raw = float(item.rate or 0)
+#         prc = round(prc_raw, 2)
+
+#         tot_amt = round(prc * qty, 2)
+
+#         # VAT-inclusive logic (correct)
+#         vat_taxable = round(tot_amt / 1.16, 2)
+#         vat_amt     = round(tot_amt - vat_taxable, 2)
+
+#         items.append({
+#             "itemSeq": item.idx,
+#             "itemCd": item.item_code,
+#             "itemNm": item.item_name,
+#             "itemClsCd": "43322555",
+#             "bcd": "",
+
+#             "pkgUnitCd": "BX",
+#             "pkg": 1,
+#             "qtyUnitCd": "EA",
+
+#             "qty": qty,
+#             "prc": prc,
+
+#             "splyAmt": tot_amt,
+#             "dcRt": 0.0,
+#             "dcAmt": 0.0,
+#             "totAmt": tot_amt,
+
+#             "vatCatCd": tax_type,
+#             "vatTaxblAmt": vat_taxable,
+#             "vatAmt": vat_amt,
+
+#             "exciseTxCatCd": None,
+#             "tlCatCd": None,
+#             "iplCatCd": None,
+
+#             "exciseTaxblAmt": 0.0,
+#             "tlTaxblAmt": 0.0,
+#             "iplTaxblAmt": 0.0,
+#             "iplAmt": 0.0,
+#             "tlAmt": 0.0,
+#             "exciseTxAmt": 0.0,
+
+#             "isrccCd": "",
+#             "isrccNm": "",
+#             "isrcAmt": 0.0,
+#         })
+
+#     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
+#     tax_amt     = round(sum(i["vatAmt"] for i in items), 2)
+#     grand_total = round(sum(i["totAmt"] for i in items), 2)
+
+#     # ZRA strict validation
+#     if round(net_total + tax_amt, 2) != grand_total:
+#         raise ValueError(
+#             f"ZRA Mismatch → taxable({net_total}) + tax({tax_amt}) != total({grand_total})"
+#         )
+
+#     now_dt = frappe.utils.now_datetime()
+
+#     payload = {
+#         "orgInvcNo": 0,
+#         "cisInvcNo": doc.name,
+#         "custTpin": "2000000011",
+#         "custNm": doc.customer_name,
+
+#         "salesTyCd": "N",
+#         "rcptTyCd": "S",
+#         "pmtTyCd": "01",
+#         "salesSttsCd": "02",
+
+#         "cfmDt": now_dt.strftime("%Y%m%d%H%M%S"),
+#         "salesDt": frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
+
+#         "totItemCnt": len(items),
+
+#         # ✅ Taxable + Tax
+#         "taxblAmtA": net_total,
+#         "taxAmtA": tax_amt,
+
+#         "totTaxblAmt": net_total,
+#         "totTaxAmt": tax_amt,
+#         "totAmt": grand_total,
+
+#         # ✅ REQUIRED TAX RATE BLOCK (THIS WAS MISSING ❗)
+#         "taxRtA": 16,
+#         "taxRtB": 16,
+#         "taxRtC1": 0,
+#         "taxRtC2": 0,
+#         "taxRtC3": 0,
+#         "taxRtD": 0,
+#         "taxRtRvat": 16,
+#         "taxRtE": 0,
+#         "taxRtF": 10,
+#         "taxRtIpl1": 5,
+#         "taxRtIpl2": 0,
+#         "taxRtTl": 1.5,
+#         "taxRtEcm": 5,
+#         "taxRtExeeg": 3,
+#         "taxRtTot": 0,
+
+#         "currencyTyCd": "ZMW",
+#         "exchangeRt": 1,
+
+#         "regrId": _zra_user_id(),
+#         "regrNm": _zra_user_id(),
+#         "modrId": _zra_user_id(),
+#         "modrNm": _zra_user_id(),
+
+#         "itemList": items,
+#     }
+
+#     return payload
+
 def _build_invoice_payload(doc):
+
+    # ✅ Auto Detect
+    is_export = (doc.tax_category == "Export")
+    is_return = doc.is_return
+    is_debit  = getattr(doc, "is_debit_note", False)
+
+    vat_cat   = "C1" if is_export else ("D" if doc.tax_category == "Exempt" else "A")
+    rcpt_type = "R"  if is_return else ("D" if is_debit else "S")
 
     items = []
 
     for item in doc.items:
-        tax_type = "A"  # VAT 16%
-
-        qty = round(float(item.qty or 0), 4)
-
-        prc_raw = float(item.rate or 0)
-        prc = round(prc_raw, 2)
-
+        qty     = round(float(item.qty or 0), 4)
+        prc     = round(float(item.rate or 0), 2)
         tot_amt = round(prc * qty, 2)
 
-        # VAT-inclusive logic (correct)
-        vat_taxable = round(tot_amt / 1.16, 2)
-        vat_amt     = round(tot_amt - vat_taxable, 2)
+        if is_export:
+            vat_taxable = tot_amt
+            vat_amt     = 0.0
+        else:
+            vat_taxable = round(tot_amt / 1.16, 2)
+            vat_amt     = round(tot_amt - vat_taxable, 2)
 
         items.append({
             "itemSeq": item.idx,
@@ -105,42 +255,35 @@ def _build_invoice_payload(doc):
             "itemNm": item.item_name,
             "itemClsCd": "43322555",
             "bcd": "",
-
             "pkgUnitCd": "BX",
             "pkg": 1,
             "qtyUnitCd": "EA",
-
             "qty": qty,
             "prc": prc,
-
             "splyAmt": tot_amt,
             "dcRt": 0.0,
             "dcAmt": 0.0,
             "totAmt": tot_amt,
-
-            "vatCatCd": tax_type,
-            "vatTaxblAmt": vat_taxable,
-            "vatAmt": vat_amt,
-
-            "exciseTxCatCd": None,
-            "tlCatCd": None,
-            "iplCatCd": None,
-
+            "vatCatCd":       vat_cat,       # ✅ Auto
+            "vatTaxblAmt":    vat_taxable,   # ✅ Auto
+            "vatAmt":         vat_amt,       # ✅ Auto
+            "exciseTxCatCd":  None,
+            "tlCatCd":        None,
+            "iplCatCd":       None,
             "exciseTaxblAmt": 0.0,
-            "tlTaxblAmt": 0.0,
-            "iplTaxblAmt": 0.0,
-            "iplAmt": 0.0,
-            "tlAmt": 0.0,
-            "exciseTxAmt": 0.0,
-
-            "isrccCd": "",
-            "isrccNm": "",
-            "isrcAmt": 0.0,
+            "tlTaxblAmt":     0.0,
+            "iplTaxblAmt":    0.0,
+            "iplAmt":         0.0,
+            "tlAmt":          0.0,
+            "exciseTxAmt":    0.0,
+            "isrccCd":        "",
+            "isrccNm":        "",
+            "isrcAmt":        0.0,
         })
 
     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
-    tax_amt     = round(sum(i["vatAmt"] for i in items), 2)
-    grand_total = round(sum(i["totAmt"] for i in items), 2)
+    tax_amt     = round(sum(i["vatAmt"]      for i in items), 2)
+    grand_total = round(sum(i["totAmt"]      for i in items), 2)
 
     # ZRA strict validation
     if round(net_total + tax_amt, 2) != grand_total:
@@ -151,48 +294,70 @@ def _build_invoice_payload(doc):
     now_dt = frappe.utils.now_datetime()
 
     payload = {
-        "orgInvcNo": 0,
-        "cisInvcNo": doc.name,
-        "custTpin": "2000000011",
-        "custNm": doc.customer_name,
+        # ✅ Auto detect
+        "orgInvcNo":      doc.return_against if doc.return_against else 0,
+        "cisInvcNo":      doc.name,
+        "custTpin":       "2000000011",
+        "custNm":         doc.customer_name,
 
-        "salesTyCd": "N",
-        "rcptTyCd": "S",
-        "pmtTyCd": "01",
-        "salesSttsCd": "02",
+        "salesTyCd":      "N",
+        "rcptTyCd":       rcpt_type,          # ✅ Auto S/R/D
+        "pmtTyCd":        "01",
+        "salesSttsCd":    "02",
 
-        "cfmDt": now_dt.strftime("%Y%m%d%H%M%S"),
-        "salesDt": frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
+        "cfmDt":          now_dt.strftime("%Y%m%d%H%M%S"),
+        "salesDt":        frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
+        "stockRlsDt":     None,
+        "cnclReqDt":      None,
+        "cnclDt":         None,
+        "rfdDt":          None,
+        "rfdRsnCd":       None,
 
-        "totItemCnt": len(items),
+        "dbtRsnCd":       "03" if is_debit else "",   # ✅ Auto
+        "invcAdjustReason": "",
+        "cashDcRt":       0,
+        "cashDcAmt":      0,
 
-        # ✅ Taxable + Tax
-        "taxblAmtA": net_total,
-        "taxAmtA": tax_amt,
+        "totItemCnt":     len(items),
 
-        "totTaxblAmt": net_total,
-        "totTaxAmt": tax_amt,
-        "totAmt": grand_total,
+        # ✅ Auto — Export C1, Normal A
+        "taxblAmtA":      net_total if not is_export else 0,
+        "taxblAmtB":      0,
+        "taxblAmtC1":     net_total if is_export else 0,
+        "taxblAmtC2":     0, "taxblAmtC3":    0,
+        "taxblAmtD":      0, "taxblAmtRvat":  0,
+        "taxblAmtE":      0, "taxblAmtF":     0,
+        "taxblAmtIpl1":   0, "taxblAmtIpl2":  0,
+        "taxblAmtTl":     0, "taxblAmtEcm":   0,
+        "taxblAmtExeeg":  0, "taxblAmtTot":   0,
 
-        # ✅ REQUIRED TAX RATE BLOCK (THIS WAS MISSING ❗)
-        "taxRtA": 16,
-        "taxRtB": 16,
-        "taxRtC1": 0,
-        "taxRtC2": 0,
-        "taxRtC3": 0,
-        "taxRtD": 0,
-        "taxRtRvat": 16,
-        "taxRtE": 0,
-        "taxRtF": 10,
-        "taxRtIpl1": 5,
-        "taxRtIpl2": 0,
-        "taxRtTl": 1.5,
-        "taxRtEcm": 5,
-        "taxRtExeeg": 3,
-        "taxRtTot": 0,
+        "taxRtA": 16, "taxRtB": 16, "taxRtC1": 0, "taxRtC2": 0,
+        "taxRtC3": 0, "taxRtD": 0, "taxRtRvat": 16, "taxRtE": 0,
+        "taxRtF": 10, "taxRtIpl1": 5, "taxRtIpl2": 0,
+        "taxRtTl": 1.5, "taxRtEcm": 5, "taxRtExeeg": 3, "taxRtTot": 0,
 
-        "currencyTyCd": "ZMW",
-        "exchangeRt": 1,
+        # ✅ Auto — Export 0 tax, Normal tax_amt
+        "taxAmtA":        tax_amt if not is_export else 0,
+        "taxAmtB":        0, "taxAmtC1":     0, "taxAmtC2":    0,
+        "taxAmtC3":       0, "taxAmtD":      0, "taxAmtRvat":  0,
+        "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
+        "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
+        "taxAmtExeeg":    0, "taxAmtTot":    0,
+
+        "totTaxblAmt":    net_total,
+        "totTaxAmt":      tax_amt,
+        "totAmt":         grand_total,
+
+        "prchrAcptcYn":   "N",
+        "remark":         "",
+
+        "currencyTyCd":   "ZMW",
+        "exchangeRt":     1,
+
+        "destnCountryCd": "ZM" if is_export else "",  # ✅ Auto
+        "lpoNumber":      doc.po_no or None,          # ✅ Auto
+
+        "saleCtyCd":      "1",
 
         "regrId": _zra_user_id(),
         "regrNm": _zra_user_id(),
