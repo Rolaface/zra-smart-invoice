@@ -291,29 +291,91 @@ def submit_sales_invoice(invoice_name):
 
 
 
+# def on_item_save(doc, method):
+#     """
+#     Hook: after_insert + on_update on Item
+
+#     Flow:
+#     1. after_insert → ZRA ko bhejo
+#     2. ZRA 000  → ERPNext item rehta hai ✅
+#        ZRA fail → ERPNext item DELETE (rollback) → frappe.throw() ❌
+#     """
+#     if not is_zra_enabled():
+#         return
+
+#     try:
+#         payload = _build_item_payload(doc)
+#         frappe.log_error(str(payload), f"ZRA Item Payload | {doc.item_code}")
+
+#         result = make_vsdc_request("items/saveItem", payload)
+#         frappe.log_error(str(result), f"ZRA Item Result | {doc.item_code}")
+
+#         if result.get("resultCd") == "000":
+#             _safe_set(doc, "custom_zra_registered", 1)
+#             _safe_set(doc, "custom_zra_item_cd", doc.item_code)
+#             frappe.logger().info(f"✅ ZRA Item synced: {doc.item_code}")
+
+#         else:
+#             # ── ZRA fail → rollback only on fresh insert ──
+#             if method == "after_insert":
+#                 frappe.delete_doc(
+#                     "Item", doc.name,
+#                     force=True,
+#                     ignore_permissions=True
+#                 )
+#                 frappe.db.commit()
+#             frappe.throw(
+#                 f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
+#                 " — Item NOT saved."
+#             )
+
+#     except frappe.ValidationError:
+#         raise
+#     except Exception as e:
+#         # ── Connection fail → bhi rollback on fresh insert ──
+#         if method == "after_insert":
+#             try:
+#                 frappe.delete_doc(
+#                     "Item", doc.name,
+#                     force=True,
+#                     ignore_permissions=True
+#                 )
+#                 frappe.db.commit()
+#             except Exception as del_err:
+#                 frappe.log_error(str(del_err), f"ZRA Rollback Failed: {doc.item_code}")
+
+#         frappe.log_error(str(e), f"ZRA Item Sync Failed: {doc.item_code}")
+#         frappe.throw(f"ZRA connection failed: {str(e)} — Item NOT saved.")
+
+
 def on_item_save(doc, method):
     """
     Hook: after_insert + on_update on Item
 
     Flow:
-    1. after_insert → ZRA ko bhejo
-    2. ZRA 000  → ERPNext item rehta hai ✅
-       ZRA fail → ERPNext item DELETE (rollback) → frappe.throw() ❌
+    1. after_insert → saveItem endpoint
+    2. on_update    → updateItem endpoint
+    3. ZRA 000  → ERPNext item rehta hai ✅
+       ZRA fail → ERPNext item DELETE (rollback on insert) → frappe.throw() ❌
     """
     if not is_zra_enabled():
         return
 
     try:
         payload = _build_item_payload(doc)
-        frappe.log_error(str(payload), f"ZRA Item Payload | {doc.item_code}")
 
-        result = make_vsdc_request("items/saveItem", payload)
-        frappe.log_error(str(result), f"ZRA Item Result | {doc.item_code}")
+        # ✅ Method ke hisaab se alag endpoint
+        if method == "after_insert":
+            endpoint = "items/saveItem"
+        else:
+            endpoint = "items/updateItem"
+
+        result = make_vsdc_request(endpoint, payload)
 
         if result.get("resultCd") == "000":
             _safe_set(doc, "custom_zra_registered", 1)
             _safe_set(doc, "custom_zra_item_cd", doc.item_code)
-            frappe.logger().info(f"✅ ZRA Item synced: {doc.item_code}")
+            print(f"✅ ZRA Item synced via {endpoint}: {doc.item_code}")
 
         else:
             # ── ZRA fail → rollback only on fresh insert ──
@@ -332,7 +394,7 @@ def on_item_save(doc, method):
     except frappe.ValidationError:
         raise
     except Exception as e:
-        # ── Connection fail → bhi rollback on fresh insert ──
+        # ── Connection fail → rollback on fresh insert ──
         if method == "after_insert":
             try:
                 frappe.delete_doc(
@@ -342,9 +404,15 @@ def on_item_save(doc, method):
                 )
                 frappe.db.commit()
             except Exception as del_err:
-                frappe.log_error(str(del_err), f"ZRA Rollback Failed: {doc.item_code}")
+                frappe.log_error(
+                    title=f"ZRA Rollback Failed: {doc.item_code}",
+                    message=str(del_err)
+                )
 
-        frappe.log_error(str(e), f"ZRA Item Sync Failed: {doc.item_code}")
+        frappe.log_error(
+            title=f"ZRA Item Sync Failed: {doc.item_code}",
+            message=frappe.get_traceback()
+        )
         frappe.throw(f"ZRA connection failed: {str(e)} — Item NOT saved.")
 
 
