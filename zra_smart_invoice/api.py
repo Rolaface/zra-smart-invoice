@@ -889,8 +889,8 @@ def _build_stock_items_payload(doc):
             "taxAmt": round(tax_amt, 4),
             "totAmt": round(sply_amt, 2),
             "totDcAmt": 0,
-            "iplCatCd": "IPLEXM",    # ✅ Valid ZRA code
-            "tlCatCd": "TLEXM",      # ✅ Valid ZRA code
+            "iplCatCd": "IPL1",    # ✅ Valid ZRA code
+            "tlCatCd": "TL",      # ✅ Valid ZRA code
             "exciseTxCatCd": "EXEEG",
             "iplAmt": 0,
             "tlAmt": 0,
