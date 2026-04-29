@@ -823,6 +823,9 @@ def _build_stock_items_payload(doc):
     for idx, item in enumerate(doc.items, start=1):
         # Item details fetch karo
         item_doc = frappe.get_doc("Item", item.item_code)
+        pkg_unit = "BX"  # Default package unit
+        uom = "U"       # Default quantity units
+        
         
         item_class_code = frappe.db.get_value(
             "Custom Item Details",
@@ -830,11 +833,31 @@ def _build_stock_items_payload(doc):
             "hsn_code"
         ) or ""
 
-        pkg_unit = frappe.db.get_value(
-            "Custom Item Details",
-            {"parent": item.item_code},
-            "packing_unit"
-        ) or "BA"
+        # pkg_unit = frappe.db.get_value(
+        #     "Custom Item Details",
+        #     {"parent": item.item_code},
+        #     "packing_unit"
+        # ) or "BA"
+
+        # ZRA Valid Code Mappings
+        UOM_MAP = {
+            "Nos": "U",
+            "Acre": "U",        # Default U
+            "Kg": "KG",
+            "Ltr": "LT",
+            "Meter": "MT",
+            "Box": "BX",
+            "Bag": "BA",
+            "Each": "EA",
+        }
+
+        PKG_UNIT_MAP = {
+            "Box": "BX",
+            "Bag": "BA",
+            "Bottle": "BT",
+            "Each": "EA",
+            "": "BX",           # Default BX
+        }
 
         qty = item.qty or 0
         rate = item.basic_rate or item.valuation_rate or 0
@@ -856,8 +879,8 @@ def _build_stock_items_payload(doc):
             "itemCd": item.item_code,
             "itemClsCd": item_class_code,
             "itemNm": item.item_name,
-            "pkgUnitCd": pkg_unit,
-            "qtyUnitCd": item.uom or "U",
+            "pkgUnitCd": PKG_UNIT_MAP.get(pkg_unit, "BX"),
+            "qtyUnitCd": UOM_MAP.get(uom, "U"),
             "qty": qty,
             "prc": rate,
             "splyAmt": round(sply_amt, 2),
@@ -866,8 +889,8 @@ def _build_stock_items_payload(doc):
             "taxAmt": round(tax_amt, 4),
             "totAmt": round(sply_amt, 2),
             "totDcAmt": 0,
-            "iplCatCd": "IPLEXM",
-            "tlCatCd": "TLEXM",
+            "iplCatCd": "IPLEXM",    # ✅ Valid ZRA code
+            "tlCatCd": "TLEXM",      # ✅ Valid ZRA code
             "exciseTxCatCd": "EXEEG",
             "iplAmt": 0,
             "tlAmt": 0,
