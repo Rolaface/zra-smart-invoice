@@ -17,6 +17,18 @@ from zra_smart_invoice.client import make_vsdc_request
 # HELPER — safely set a field on doc (skip if column not yet created)
 # ───────────────────────────────────────────────────────────────────
 
+ITEM_TYPE_CODE_MAP = {
+    "Raw Material":     "1",
+    "Finished Product": "2",
+    "Service":          "3",
+}
+
+ITEM_TYPE_CODE_DEFAULT = "2"
+
+def get_item_type_code(item_group: str) -> str:
+   
+    return ITEM_TYPE_CODE_MAP.get(item_group, ITEM_TYPE_CODE_DEFAULT)
+
 def _safe_set(doc, field, value):
     """
     Set a field only if the DB column exists.
@@ -45,8 +57,8 @@ def _build_item_payload(doc):
         "itemStdNm":     doc.item_name,           # [STANDARD]
 
         # ── Classification ────────────────────────────────────────
-        "itemClsCd":     "43322555",              # [DEFAULT] TODO: custom_zra_item_class_code
-        "itemTyCd":      "2",                     # [DEFAULT] TODO: custom_zra_item_type_code
+        "itemClsCd":     doc.custom_item_metadata[0].hsn_code,              # [DEFAULT] TODO: custom_zra_item_class_code
+        "itemTyCd":      get_item_type_code(doc.item_group),                # [DEFAULT] TODO: custom_zra_item_type_code
         "vatCatCd":      "A",                     # [DEFAULT] TODO: custom_zra_tax_type
         "iplCatCd":      None,                    # [DEFAULT] TODO: custom_zra_ipl_cat_cd
         "tlCatCd":       None,                    # [DEFAULT]
