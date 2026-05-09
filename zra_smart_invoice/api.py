@@ -50,6 +50,7 @@ def _zra_user_id(max_len=20):
 # ───────────────────────────────────────────────────────────────────
 
 def _build_item_payload(doc):
+    tax_template = frappe.get_doc("Item Tax Template", doc.taxes[0].item_tax_template)
     return {
         # ── Identity ──────────────────────────────────────────────
         "itemCd":        doc.item_code,           # [STANDARD]
@@ -59,14 +60,14 @@ def _build_item_payload(doc):
         # ── Classification ────────────────────────────────────────
         "itemClsCd":     doc.custom_item_metadata[0].hsn_code,              # [DEFAULT] TODO: custom_zra_item_class_code
         "itemTyCd":      get_item_type_code(doc.item_group),                # [DEFAULT] TODO: custom_zra_item_type_code
-        "vatCatCd":      "A",                     # [DEFAULT] TODO: custom_zra_tax_type
+        "vatCatCd":      tax_template.title,                     # [DEFAULT] TODO: custom_zra_tax_type
         "iplCatCd":      None,                    # [DEFAULT] TODO: custom_zra_ipl_cat_cd
         "tlCatCd":       None,                    # [DEFAULT]
         "exciseTxCatCd": None,                    # [DEFAULT]
 
         # ── Units ─────────────────────────────────────────────────
-        "pkgUnitCd":     "BX",                    # [DEFAULT] TODO: custom_zra_pkg_unit_code
-        "qtyUnitCd":     "EA",                    # [DEFAULT] TODO: custom_zra_qty_unit_code
+        "pkgUnitCd":     doc.stock_uom,                    # [DEFAULT] TODO: custom_zra_pkg_unit_code
+        "qtyUnitCd":     doc.stock_uom,                    # @TODO need to Update this to a separate field in Item doctype for ZRA compliance
 
         # ── Pricing ───────────────────────────────────────────────
         "dftPrc":        doc.standard_rate or 0,  # [STANDARD]
