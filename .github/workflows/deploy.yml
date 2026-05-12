@@ -1,0 +1,63 @@
+name: Deploy ERP
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_PRIVATE_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 600s
+          script: |
+            SITE="api.erp.udvell.rolaface.com"
+            BENCH_DIR="/srv/apps/erp/backend/rolaface-izayne-bench"
+
+            echo "📂 Switching to bench directory..."
+            cd "$BENCH_DIR"
+
+            su - frappe -c "
+              cd \"$BENCH_DIR\"
+
+              export NVM_DIR=~/.nvm
+              [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+              nvm use 24
+
+              source env/bin/activate
+
+              echo '📦 Backup...'
+              bench --site \"$SITE\" backup || { echo '❌ Backup failed'; exit 1; }
+
+              echo '⬇️ Pull latest code...'
+              cd apps/zra_smart_invoice
+              git fetch origin main && git reset --hard origin/main || { echo '❌ Git pull failed'; exit 1; }
+              cd \"$BENCH_DIR\"
+
+              echo '⚙️ Run migrations...'
+              bench --site \"$SITE\" migrate 2>&1 || true
+              echo '✅ Migration done'
+
+              echo '🎨 Build assets...'
+              bench build --verbose 2>&1 | grep -v 'Browserslist: caniuse-lite is outdated' || true
+
+              echo '🧹 Clear cache...'
+              bench --site \"$SITE\" clear-cache || { echo '❌ Clear cache failed'; exit 1; }
+            " || { echo '❌ Deploy script failed'; exit 1; }
+
+            echo "🔄 Restarting services..."
+            supervisorctl restart rolaface-izayne-bench-web: rolaface-izayne-bench-workers: || { echo '❌ Service restart failed'; exit 1; }
+
+            echo "✅ Deploy complete!"
