@@ -50,7 +50,15 @@ def _zra_user_id(max_len=20):
 # ───────────────────────────────────────────────────────────────────
 
 def _build_item_payload(doc):
+    
+    if len(doc.taxes) > 1:
+        frappe.throw(f"Multiple tax templates not supported for Item {doc.name}, ZRA requires only one tax template per item.")
+
     tax_template = frappe.get_doc("Item Tax Template", doc.taxes[0].item_tax_template)
+    if len(tax_template.taxes) > 1:
+        frappe.throw(f"Multiple taxes in tax template not supported for Item {doc.name}, ZRA requires only one tax per item.")
+
+    tax_template_title = tax_template.title.split("|")[0] if tax_template else None
     return {
         # ── Identity ──────────────────────────────────────────────
         "itemCd":        doc.item_code,           # [STANDARD]
@@ -60,7 +68,7 @@ def _build_item_payload(doc):
         # ── Classification ────────────────────────────────────────
         "itemClsCd":     doc.custom_item_metadata[0].hsn_code,              # [DEFAULT] TODO: custom_zra_item_class_code
         "itemTyCd":      get_item_type_code(doc.item_group),                # [DEFAULT] TODO: custom_zra_item_type_code
-        "vatCatCd":      tax_template.title,                     # [DEFAULT] TODO: custom_zra_tax_type
+        "vatCatCd":      tax_template_title.strip() if tax_template_title else None,                     # [DEFAULT] TODO: custom_zra_tax_type
         "iplCatCd":      None,                    # [DEFAULT] TODO: custom_zra_ipl_cat_cd
         "tlCatCd":       None,                    # [DEFAULT]
         "exciseTxCatCd": None,                    # [DEFAULT]
