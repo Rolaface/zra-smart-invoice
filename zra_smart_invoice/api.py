@@ -54,11 +54,13 @@ def _build_item_payload(doc):
     if len(doc.taxes) > 1:
         frappe.throw(f"Multiple tax templates not supported for Item {doc.name}, ZRA requires only one tax template per item.")
 
-    tax_template = frappe.get_doc("Item Tax Template", doc.taxes[0].item_tax_template)
-    if len(tax_template.taxes) > 1:
+    tax_template = frappe.get_doc("Item Tax Template", doc.taxes[0].item_tax_template) if doc.taxes else None
+    if tax_template and len(tax_template.taxes) > 1:
         frappe.throw(f"Multiple taxes in tax template not supported for Item {doc.name}, ZRA requires only one tax per item.")
 
     tax_template_title = tax_template.title.split("|")[0] if tax_template else None
+    if not tax_template_title:
+        frappe.throw("Please select a valid Tax Template for the item.")
     return {
         # ── Identity ──────────────────────────────────────────────
         "itemCd":        doc.item_code,           # [STANDARD]
@@ -66,28 +68,28 @@ def _build_item_payload(doc):
         "itemStdNm":     doc.item_name,           # [STANDARD]
 
         # ── Classification ────────────────────────────────────────
-        "itemClsCd":     doc.custom_item_metadata[0].hsn_code,              # [DEFAULT] TODO: custom_zra_item_class_code
-        "itemTyCd":      get_item_type_code(doc.item_group),                # [DEFAULT] TODO: custom_zra_item_type_code
-        "vatCatCd":      tax_template_title.strip() if tax_template_title else None,                     # [DEFAULT] TODO: custom_zra_tax_type
+        "itemClsCd":     doc.custom_item_metadata[0].hsn_code,
+        "itemTyCd":      get_item_type_code(doc.item_group),
+        "vatCatCd":      tax_template_title.strip() if tax_template_title else None,
         "iplCatCd":      None,                    # [DEFAULT] TODO: custom_zra_ipl_cat_cd
         "tlCatCd":       None,                    # [DEFAULT]
         "exciseTxCatCd": None,                    # [DEFAULT]
 
         # ── Units ─────────────────────────────────────────────────
-        "pkgUnitCd":     doc.stock_uom,                    # [DEFAULT] TODO: custom_zra_pkg_unit_code
-        "qtyUnitCd":     doc.stock_uom,                    # @TODO need to Update this to a separate field in Item doctype for ZRA compliance
+        "pkgUnitCd":     frappe.get_value("Packaging Unit Of Measure", doc.custom_item_metadata[0].packaging_uom, "code"),
+        "qtyUnitCd":     frappe.get_value("UOM", doc.stock_uom, "common_code"),
 
         # ── Pricing ───────────────────────────────────────────────
         "dftPrc":        doc.standard_rate or 0,  # [STANDARD]
 
         # ── Origin & flags ────────────────────────────────────────
-        "orgnNatCd":     "ZM",                    # [DEFAULT]
+        "orgnNatCd":     frappe.get_value("Country", doc.country_of_origin, "code").upper() or frappe.get_value("Country", frappe.defaults.get_user_default("country"), "code").upper(),
         "btchNo":        None,
         "bcd":           None,
         "addInfo":       None,
         "sftyQty":       0,
-        "isrcAplcbYn":   "N",
-        "svcChargeYn":   "N",                     # [DEFAULT] TODO: custom_zra_svc_charge
+        "isrcAplcbYn":   "Y" if doc.custom_item_metadata[0].insurance else "N",
+        "svcChargeYn":   "Y" if doc.custom_item_metadata[0].service_charge else "N",
         "rentalYn":      "N",
         "useYn":         "Y",
 
