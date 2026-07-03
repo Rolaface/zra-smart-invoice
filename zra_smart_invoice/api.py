@@ -1,3 +1,4 @@
+from apps.zra_smart_invoice.zra_smart_invoice.config.constant import PAYMENT_TYPE_CODE_MAP
 import frappe
 import requests
 from zra_smart_invoice.config import is_zra_enabled, get_zra_config
@@ -263,45 +264,37 @@ def _build_invoice_payload(doc):
     for item in doc.items:
         qty     = round(float(item.qty or 0), 4)
         prc     = round(float(item.rate or 0), 2)
-        tot_amt = round(prc * qty, 2)
-
-        if is_export:
-            vat_taxable = tot_amt
-            vat_amt     = 0.0
-        else:
-            vat_taxable = round(tot_amt / 1.16, 2)
-            vat_amt     = round(tot_amt - vat_taxable, 2)
-
+        item_doc = frappe.get_doc("Item", item.item_code)
+        tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
+        vat_cat_cd = item.item_tax_template.split("|")[0] if item.item_tax_template else None
         items.append({
             "itemSeq": item.idx,
             "itemCd": item.item_code,
+            "itemClsCd": item_doc.custom_item_metadata[0].hsn_code,
             "itemNm": item.item_name,
-            "itemClsCd": "43322555",
             "bcd": "",
-            "pkgUnitCd": "BX",
-            "pkg": 1,
-            "qtyUnitCd": "EA",
+            "pkgUnitCd": frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code"),
+            "pkg": item_doc.custom_item_metadata[0].packing_unit,
+            "qtyUnitCd": frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
             "qty": qty,
             "prc": prc,
-            "splyAmt": tot_amt,
-            "dcRt": 0.0,
-            "dcAmt": 0.0,
-            "totAmt": tot_amt,
-            "vatCatCd":       vat_cat,       # ✅ Auto
-            "vatTaxblAmt":    vat_taxable,   # ✅ Auto
-            "vatAmt":         vat_amt,       # ✅ Auto
-            "exciseTxCatCd":  None,
-            "tlCatCd":        None,
-            "iplCatCd":       None,
+            "splyAmt": item.amount,
+            "dcRt": item.discount_percentage,
+            "dcAmt": item.discount_amount,
+            "isrccCd": "",
+            "isrccNm": "",
+            "isrcAmt": 0.0,
+            "vatCatCd": vat_cat_cd.strip(),
+            "exciseTxCatCd": None,
+            "vatTaxblAmt": qty*prc,
             "exciseTaxblAmt": 0.0,
-            "tlTaxblAmt":     0.0,
-            "iplTaxblAmt":    0.0,
-            "iplAmt":         0.0,
-            "tlAmt":          0.0,
-            "exciseTxAmt":    0.0,
-            "isrccCd":        "",
-            "isrccNm":        "",
-            "isrcAmt":        0.0,
+            "tlTaxblAmt": 0.0,
+            "iplTaxblAmt": 0.0,
+            "iplAmt": 0.0,
+            "tlAmt": 0.0,
+            "vatAmt": round(qty*prc*tax_rate/100, 2) if tax_rate else 0.0,
+            "exciseTxAmt": 0.0,
+            "totAmt": round(qty*prc + (qty*prc*tax_rate/100 if tax_rate else 0.0), 2)
         })
 
     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
@@ -315,17 +308,22 @@ def _build_invoice_payload(doc):
         )
 
     now_dt = frappe.utils.now_datetime()
-
+    if not doc.custom_details or not doc.custom_details[0].payment_mode:
+        frappe.throw("Please select a payment mode for the Sales Invoice.")
+    customer_country = frappe.get_value("Address", f"{doc.customer}-Shipping", "country")
+    customer_country_code = frappe.get_value("Country", customer_country, "code").upper() if customer_country else ""
     payload = {
         # ✅ Auto detect
         "orgInvcNo":      doc.return_against if doc.return_against else 0,
         "cisInvcNo":      doc.name,
-        "custTpin":       "2000000011",
+        "custTpin":       frappe.get_value("Customer", doc.customer, "tax_id") or "",
         "custNm":         doc.customer_name,
 
         "salesTyCd":      "N",
         "rcptTyCd":       rcpt_type,          # ✅ Auto S/R/D
-        "pmtTyCd":        "01",
+        "pmtTyCd":         PAYMENT_TYPE_CODE_MAP.get(
+                                                        doc.custom_details[0].payment_mode
+                                                    ) if doc.custom_details else None,
         "salesSttsCd":    "02",
 
         "cfmDt":          now_dt.strftime("%Y%m%d%H%M%S"),
@@ -336,17 +334,18 @@ def _build_invoice_payload(doc):
         "rfdDt":          None,
         "rfdRsnCd":       None,
 
+        "totItemCnt":     len(items),
+
         "dbtRsnCd":       "03" if is_debit else "",   # ✅ Auto
         "invcAdjustReason": "",
         "cashDcRt":       0,
         "cashDcAmt":      0,
 
-        "totItemCnt":     len(items),
 
         # ✅ Auto — Export C1, Normal A
-        "taxblAmtA":      net_total if not is_export else 0,
+        "taxblAmtA":      doc.net_total if not is_export else 0,
         "taxblAmtB":      0,
-        "taxblAmtC1":     net_total if is_export else 0,
+        "taxblAmtC1":     doc.net_total if is_export else 0,
         "taxblAmtC2":     0, "taxblAmtC3":    0,
         "taxblAmtD":      0, "taxblAmtRvat":  0,
         "taxblAmtE":      0, "taxblAmtF":     0,
@@ -360,16 +359,16 @@ def _build_invoice_payload(doc):
         "taxRtTl": 1.5, "taxRtEcm": 5, "taxRtExeeg": 3, "taxRtTot": 0,
 
         # ✅ Auto — Export 0 tax, Normal tax_amt
-        "taxAmtA":        tax_amt if not is_export else 0,
+        "taxAmtA":        doc.total_taxes_and_charges if not is_export else 0,
         "taxAmtB":        0, "taxAmtC1":     0, "taxAmtC2":    0,
         "taxAmtC3":       0, "taxAmtD":      0, "taxAmtRvat":  0,
         "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
         "taxAmtExeeg":    0, "taxAmtTot":    0,
 
-        "totTaxblAmt":    net_total,
-        "totTaxAmt":      tax_amt,
-        "totAmt":         grand_total,
+        "totTaxblAmt":    doc.net_total,
+        "totTaxAmt":      doc.total_taxes_and_charges,
+        "totAmt":         doc.grand_total,
 
         "prchrAcptcYn":   "N",
         "remark":         "",
@@ -377,7 +376,7 @@ def _build_invoice_payload(doc):
         "currencyTyCd":   "ZMW",
         "exchangeRt":     1,
 
-        "destnCountryCd": "ZM" if is_export else "",  # ✅ Auto
+        "destnCountryCd":  customer_country_code if is_export else "",
         "lpoNumber":      doc.po_no or None,          # ✅ Auto
 
         "saleCtyCd":      "1",
@@ -617,7 +616,7 @@ def on_sales_invoice_submit(doc, method):
             frappe.throw("ZRA Payload generation failed")
 
         frappe.log_error(str(payload), f"ZRA Invoice Payload | {doc.name}")
-
+        print(doc.custom_details[0].barcode_data)
         result = make_vsdc_request("trnsSales/saveSales", payload)
 
         # ✅ SAFETY CHECK
@@ -633,10 +632,11 @@ def on_sales_invoice_submit(doc, method):
             _safe_set(doc, "custom_zra_result_code", result.get("resultCd"))
             _safe_set(doc, "custom_zra_result_msg", result.get("resultMsg"))
             _safe_set(doc, "custom_zra_rcpt_no", zra_data.get("rcptNo"))
-
+            print(zra_data)
             frappe.logger().info(
                 f"✅ ZRA Invoice submitted | RcptNo: {zra_data.get('rcptNo')} | {doc.name}"
             )
+            doc.custom_details[0].barcode_data = zra_data.get("qrCodeUrl", "")
         else:
             frappe.throw(
                 f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
