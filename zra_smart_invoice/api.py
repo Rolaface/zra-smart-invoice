@@ -250,6 +250,10 @@ def _is_export(doc):
 #     return payload
 
 def _build_invoice_payload(doc):
+    """
+        Frappe invoice, the tax is configured as tax-exclusive (added on top),
+        but ZRA expects tax-inclusive
+    """
 
     # ✅ Auto Detect
     is_export = (doc.tax_category == "Export")
@@ -263,10 +267,13 @@ def _build_invoice_payload(doc):
 
     for item in doc.items:
         qty     = round(float(item.qty or 0), 4)
-        prc     = round(float(item.rate or 0), 2)
         item_doc = frappe.get_doc("Item", item.item_code)
         tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
         vat_cat_cd = item.item_tax_template.split("|")[0] if item.item_tax_template else None
+        net_amt   = round(float(item.net_amount or 0), 2)
+        vat_amt   = round(net_amt * tax_rate / 100, 4)
+        tot_amt   = round(net_amt + vat_amt, 2)
+        prc     = round(tot_amt / qty, 2)
         items.append({
             "itemSeq": item.idx,
             "itemCd": item.item_code,
@@ -278,7 +285,7 @@ def _build_invoice_payload(doc):
             "qtyUnitCd": frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
             "qty": qty,
             "prc": prc,
-            "splyAmt": item.amount,
+            "splyAmt": tot_amt,
             "dcRt": item.discount_percentage,
             "dcAmt": item.discount_amount,
             "isrccCd": "",
@@ -286,15 +293,15 @@ def _build_invoice_payload(doc):
             "isrcAmt": 0.0,
             "vatCatCd": vat_cat_cd.strip(),
             "exciseTxCatCd": None,
-            "vatTaxblAmt": qty*prc,
+            "vatTaxblAmt": net_amt,
             "exciseTaxblAmt": 0.0,
             "tlTaxblAmt": 0.0,
             "iplTaxblAmt": 0.0,
             "iplAmt": 0.0,
             "tlAmt": 0.0,
-            "vatAmt": round(qty*prc*tax_rate/100, 2) if tax_rate else 0.0,
+            "vatAmt": vat_amt,
             "exciseTxAmt": 0.0,
-            "totAmt": round(qty*prc + (qty*prc*tax_rate/100 if tax_rate else 0.0), 2)
+            "totAmt": tot_amt
         })
 
     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
@@ -343,7 +350,7 @@ def _build_invoice_payload(doc):
 
 
         # ✅ Auto — Export C1, Normal A
-        "taxblAmtA":      doc.net_total if not is_export else 0,
+        "taxblAmtA":      net_total,
         "taxblAmtB":      0,
         "taxblAmtC1":     doc.net_total if is_export else 0,
         "taxblAmtC2":     0, "taxblAmtC3":    0,
@@ -359,16 +366,16 @@ def _build_invoice_payload(doc):
         "taxRtTl": 1.5, "taxRtEcm": 5, "taxRtExeeg": 3, "taxRtTot": 0,
 
         # ✅ Auto — Export 0 tax, Normal tax_amt
-        "taxAmtA":        doc.total_taxes_and_charges if not is_export else 0,
+        "taxAmtA":        tax_amt,
         "taxAmtB":        0, "taxAmtC1":     0, "taxAmtC2":    0,
         "taxAmtC3":       0, "taxAmtD":      0, "taxAmtRvat":  0,
         "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
         "taxAmtExeeg":    0, "taxAmtTot":    0,
 
-        "totTaxblAmt":    doc.net_total,
-        "totTaxAmt":      doc.total_taxes_and_charges,
-        "totAmt":         doc.grand_total,
+        "totTaxblAmt":    net_total,
+        "totTaxAmt":      tax_amt,
+        "totAmt":         grand_total,
 
         "prchrAcptcYn":   "N",
         "remark":         "",
@@ -610,7 +617,7 @@ def on_sales_invoice_submit(doc, method):
 
     try:
         payload = _build_invoice_payload(doc)
-
+        print(payload)
         # ✅ SAFETY CHECK
         if not payload:
             frappe.throw("ZRA Payload generation failed")
