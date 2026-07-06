@@ -319,6 +319,10 @@ def _build_invoice_payload(doc):
         frappe.throw("Please select a payment mode for the Sales Invoice.")
     customer_country = frappe.get_value("Address", f"{doc.customer}-Shipping", "country")
     customer_country_code = frappe.get_value("Country", customer_country, "code").upper() if customer_country else ""
+    frappe.log("Payment Mode  = ",doc.custom_details[0].payment_mode)
+    frappe.log("Payment COde is: ",  PAYMENT_TYPE_CODE_MAP.get(
+                                                        doc.custom_details[0].payment_mode
+                                                    ) if doc.custom_details else None,)
     payload = {
         # ✅ Auto detect
         "orgInvcNo":      doc.return_against if doc.return_against else 0,
