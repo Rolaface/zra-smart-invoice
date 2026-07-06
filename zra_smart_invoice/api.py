@@ -1,4 +1,4 @@
-from apps.zra_smart_invoice.zra_smart_invoice.config.constant import PAYMENT_TYPE_CODE_MAP
+from zra_smart_invoice.config.constant import PAYMENT_TYPE_CODE_MAP
 import frappe
 import requests
 from zra_smart_invoice.config import is_zra_enabled, get_zra_config
