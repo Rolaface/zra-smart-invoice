@@ -62,6 +62,10 @@ def _build_item_payload(doc):
     tax_template_title = tax_template.title.split("|")[0] if tax_template else None
     if not tax_template_title:
         frappe.throw("Please select a valid Tax Template for the item.")
+    if doc.country_of_origin:
+        orgn_nat_cd = frappe.get_value("Country", doc.country_of_origin, "code").upper()
+    else:
+        orgn_nat_cd = frappe.get_value("Country", frappe.defaults.get_user_default("country"), "code").upper()
     return {
         # ── Identity ──────────────────────────────────────────────
         "itemCd":        doc.item_code,           # [STANDARD]
@@ -84,7 +88,7 @@ def _build_item_payload(doc):
         "dftPrc":        doc.standard_rate or 0,  # [STANDARD]
 
         # ── Origin & flags ────────────────────────────────────────
-        "orgnNatCd":     frappe.get_value("Country", doc.country_of_origin, "code").upper() or frappe.get_value("Country", frappe.defaults.get_user_default("country"), "code").upper(),
+        "orgnNatCd":     orgn_nat_cd,
         "btchNo":        None,
         "bcd":           None,
         "addInfo":       None,
