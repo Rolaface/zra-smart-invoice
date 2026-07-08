@@ -3,6 +3,7 @@ import frappe
 import requests
 from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
+import json
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -270,14 +271,14 @@ def _build_invoice_payload(doc):
     items = []
 
     for item in doc.items:
-        qty     = round(float(item.qty or 0), 4)
+        qty     = abs(round(float(item.qty or 0), 4))
         item_doc = frappe.get_doc("Item", item.item_code)
         tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
         vat_cat_cd = item.item_tax_template.split("|")[0] if item.item_tax_template else None
-        net_amt   = round(float(item.net_amount or 0), 2)
-        vat_amt   = round(net_amt * tax_rate / 100, 4)
-        tot_amt   = round(net_amt + vat_amt, 2)
-        prc     = round(tot_amt / qty, 2)
+        net_amt   = abs(round(float(item.net_amount or 0), 2))
+        vat_amt   = abs(round(net_amt * tax_rate / 100, 4))
+        tot_amt   = abs(round(net_amt + vat_amt, 2))
+        prc     = abs(round(tot_amt / qty, 2))
         items.append({
             "itemSeq": item.idx,
             "itemCd": item.item_code,
@@ -323,11 +324,23 @@ def _build_invoice_payload(doc):
         frappe.throw("Please select a payment mode for the Sales Invoice.")
     customer_country = frappe.get_value("Address", f"{doc.customer}-Shipping", "country")
     customer_country_code = frappe.get_value("Country", customer_country, "code").upper() if customer_country else ""
-
+    reason = None
+    if doc.is_return == 1:
+        try:
+            remarks_data = json.loads(doc.remarks)
+            reason = remarks_data.get("code", "03")
+        except Exception:
+            reason = "03"
+    if doc.is_return == 1:
+        sales_invoice_doc = frappe.get_doc("Sales Invoice", doc.return_against)
+        zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
     payload = {
         # ✅ Auto detect
-        "orgInvcNo":      doc.return_against if doc.return_against else 0,
+        "tpin":          get_zra_config()["tpin"],
+        "bhfId":         get_zra_config()["bhf_id"],
+        "orgInvcNo":     zra_response.get("rcptNo") if doc.is_return == 1 and zra_response else 0,
         "cisInvcNo":      doc.name,
+        "orgSdcId":       zra_response.get("sdcId") if doc.is_return == 1 and zra_response else None,
         "custTpin":       frappe.get_value("Customer", doc.customer, "tax_id") or "",
         "custNm":         doc.customer_name,
 
@@ -344,7 +357,7 @@ def _build_invoice_payload(doc):
         "cnclReqDt":      None,
         "cnclDt":         None,
         "rfdDt":          None,
-        "rfdRsnCd":       None,
+        "rfdRsnCd":       reason,
 
         "totItemCnt":     len(items),
 
@@ -378,7 +391,7 @@ def _build_invoice_payload(doc):
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
         "taxAmtExeeg":    0, "taxAmtTot":    0,
 
-        "totTaxblAmt":    net_total,
+        "totTaxblAmt":    abs(net_total),
         "totTaxAmt":      tax_amt,
         "totAmt":         grand_total,
 
@@ -649,6 +662,7 @@ def on_sales_invoice_submit(doc, method):
                 f"✅ ZRA Invoice submitted | RcptNo: {zra_data.get('rcptNo')} | {doc.name}"
             )
             doc.custom_details[0].barcode_data = zra_data.get("qrCodeUrl", "")
+            doc.custom_details[0].zra_response = zra_data
         else:
             frappe.throw(
                 f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
