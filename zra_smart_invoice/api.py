@@ -402,7 +402,7 @@ def _build_invoice_payload(doc):
         "exchangeRt":     1,
 
         "destnCountryCd":  customer_country_code if is_export else "",
-        "lpoNumber":      doc.po_no or None,          # ✅ Auto
+        "lpoNumber":       None,          # ✅ Auto
 
         "saleCtyCd":      "1",
 
