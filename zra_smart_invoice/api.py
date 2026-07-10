@@ -274,6 +274,8 @@ def _build_invoice_payload(doc):
         qty     = abs(round(float(item.qty or 0), 4))
         item_doc = frappe.get_doc("Item", item.item_code)
         tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
+        if tax_rate is None:
+            frappe.throw(f"Tax rate not found for item {item.item_code} for tax category {doc.tax_category}")
         vat_cat_cd = item.item_tax_template.split("|")[0] if item.item_tax_template else None
         net_amt   = abs(round(float(item.net_amount or 0), 2))
         vat_amt   = abs(round(net_amt * tax_rate / 100, 4))
