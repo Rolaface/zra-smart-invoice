@@ -32,6 +32,9 @@ doc_events = {
         "on_cancel":     "zra_smart_invoice.api.on_sales_invoice_cancel",
     },
 
+    "Company": {
+        "on_update": "zra_smart_invoice.patches.organization.on_update.on_organization_update"
+    },
 
     # ✅ Purchase Invoice
     "Purchase Invoice": {
