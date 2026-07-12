@@ -327,10 +327,12 @@ def _build_invoice_payload(doc):
     customer_country = frappe.get_value("Address", f"{doc.customer}-Shipping", "country")
     customer_country_code = frappe.get_value("Country", customer_country, "code").upper() if customer_country else ""
     reason = None
+    description = None
     if doc.is_return == 1:
         try:
             remarks_data = json.loads(doc.remarks)
             reason = remarks_data.get("code", "03")
+            description = remarks_data.get("description", "Credit Note")
         except Exception:
             reason = "03"
     if doc.is_return == 1:
@@ -356,8 +358,8 @@ def _build_invoice_payload(doc):
         "cfmDt":          now_dt.strftime("%Y%m%d%H%M%S"),
         "salesDt":        frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
         "stockRlsDt":     None,
-        "cnclReqDt":      None,
-        "cnclDt":         None,
+        "cnclReqDt":      now_dt.strftime("%Y%m%d%H%M%S") if doc.is_return == 1 else None,
+        "cnclDt":         now_dt.strftime("%Y%m%d%H%M%S") if doc.is_return == 1 else None,
         "rfdDt":          None,
         "rfdRsnCd":       reason,
 
@@ -398,7 +400,7 @@ def _build_invoice_payload(doc):
         "totAmt":         grand_total,
 
         "prchrAcptcYn":   "N",
-        "remark":         "",
+        "remark":         description,
 
         "currencyTyCd":   "ZMW",
         "exchangeRt":     1,
