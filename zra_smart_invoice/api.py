@@ -330,12 +330,12 @@ def _build_invoice_payload(doc):
     description = None
     if doc.is_return == 1:
         try:
-            remarks_data = json.loads(doc.remarks)
-            reason = remarks_data.get("code", "03")
-            description = remarks_data.get("description", "Credit Note")
+            reason_details = json.loads(sales_invoice_doc.custom_details[0].reason) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].reason else {}
+            reason = reason_details.get("code", "03")
+            description = reason_details.get("description", "Credit Note")
         except Exception:
             reason = "03"
-    if doc.is_return == 1:
+
         sales_invoice_doc = frappe.get_doc("Sales Invoice", doc.return_against)
         zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
     payload = {
@@ -592,6 +592,7 @@ def on_item_save(doc, method):
             _safe_set(doc, "custom_zra_registered", 1)
             _safe_set(doc, "custom_zra_item_cd", doc.item_code)
             print(f"✅ ZRA Item synced via {endpoint}: {doc.item_code}")
+            print(f"ZRA Result: {result}")
 
         else:
             # ── ZRA fail → rollback only on fresh insert ──
@@ -685,28 +686,33 @@ def on_sales_invoice_cancel(doc, method):
     if not is_zra_enabled():
         return
     try:
+        zra_response = json.loads(doc.custom_details[0].zra_response) if doc.custom_details and doc.custom_details[0].zra_response else {}
         now_str = frappe.utils.now_datetime().strftime("%Y%m%d%H%M%S")
-        payload = {
-            "orgInvcNo": doc.name,
-            "cnclReqDt": now_str,
-            "cnclDt":    now_str,
-            "rfdRsnCd":  "01",
-            "remark":    "Invoice Cancelled",
-        }
-        result = make_vsdc_request("trnsSales/saveCreditNote", payload)
+        # payload = {
+        #     "orgInvcNo": zra_response.get("rcptNo"),
+        #     "cnclReqDt": now_str,
+        #     "cnclDt":    now_str,
+        #     "rfdRsnCd":  "01",
+        #     "remark":    "Invoice Cancelled",
+        # }
+        payload = _build_invoice_payload(doc)
+
+        result = make_vsdc_request("trnsSales/saveSales", payload)
         if result.get("resultCd") == "000":
             frappe.msgprint("✅ ZRA cancellation submitted successfully.")
         else:
             frappe.msgprint(
-                f"⚠️ ZRA cancellation warning: {result.get('resultMsg')}",
+                f"⚠️ ZRA cancellation warning: {result}",
                 indicator="orange",
             )
+            frappe.throw(f"ZRA cancel failed: {result}")
     except Exception as e:
         frappe.log_error(str(e), f"ZRA Cancel Failed: {doc.name}")
         frappe.msgprint(
             f"⚠️ ZRA cancel failed (ERPNext cancel still processed): {str(e)}",
             indicator="orange",
         )
+        frappe.throw(f"ZRA cancel failed: {str(e)}")
 
 
 # ═══════════════════════════════════════════════════════════════════
