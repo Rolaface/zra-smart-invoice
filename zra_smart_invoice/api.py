@@ -826,14 +826,16 @@ def _build_purchase_payload(doc):
     now_dt      = frappe.utils.now_datetime()
 
     return {
+        "tpin":         get_zra_config()["tpin"],
+        "bhfId":        get_zra_config()["bhf_id"],
         "cisInvcNo":    doc.name,
         "orgInvcNo":    0,
 
         # Supplier info
-        "spplrTpin":    "2000000011",             # TODO: custom_supplier_tpin
-        "spplrBhfId":   "000",                    # TODO: custom_supplier_bhf_id
+        "spplrTpin":    "2000000011",             # TODO: Not Mendatory
+        "spplrBhfId":   "000",                    # TODO: Not Mendatory
         "spplrNm":      doc.supplier_name,
-        "spplrInvcNo":  doc.bill_no or "",        # Supplier ka invoice number
+        "spplrInvcNo":  doc.bill_no or "",        # Supplier ka invoice number Not Mendatory
 
         "regTyCd":      "M",
         "pchsTyCd":     "N",
@@ -841,10 +843,10 @@ def _build_purchase_payload(doc):
         "pmtTyCd":      "01",                     # TODO: custom_zra_payment_type
         "pchsSttsCd":   "02",
 
-        "cfmDt":        now_dt.strftime("%Y%m%d%H%M%S"),
         "pchsDt":       frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
         "cnclReqDt":    "",
         "cnclDt":       "",
+        "cfmDt":        now_dt.strftime("%Y%m%d%H%M%S"),
 
         "totItemCnt":   len(items),
         "totTaxblAmt":  net_total,
