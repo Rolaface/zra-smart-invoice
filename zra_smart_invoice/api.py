@@ -4,6 +4,7 @@ import requests
 from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
 import json
+from custom_api.config import zra_exception
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -655,7 +656,10 @@ def on_sales_invoice_submit(doc, method):
 
         frappe.log_error(str(result), f"ZRA Invoice Result | {doc.name}")
 
-        if result.get("resultCd") == "000":
+        if result.get("resultCd") in [838, 894]:
+            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
+
+        elif result.get("resultCd") == "000":
             zra_data = result.get("data") or {}
 
             _safe_set(doc, "custom_zra_submitted", 1)
@@ -672,6 +676,8 @@ def on_sales_invoice_submit(doc, method):
             frappe.throw(
                 f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
             )
+    except zra_exception.ZRAConnectionError as e:
+        raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
 
     except Exception as e:
         frappe.log_error(str(e), f"ZRA Invoice Submit Failed: {doc.name}")

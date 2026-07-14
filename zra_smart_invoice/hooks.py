@@ -49,3 +49,9 @@ doc_events = {
         "validate": "zra_smart_invoice.patches.customer.before_validate_hooks.before_validate",
     },
 }
+
+scheduler_events = {
+        "hourly": [
+            "zra_smart_invoice.scheduler.sales_invoice.offline_sync.sync_offline_invoice"
+        ]
+    }

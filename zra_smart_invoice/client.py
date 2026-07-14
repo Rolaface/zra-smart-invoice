@@ -1,3 +1,4 @@
+from custom_api.config import zra_exception
 import frappe
 import requests
 from zra_smart_invoice.config import get_zra_config
@@ -39,7 +40,8 @@ def make_vsdc_request(endpoint, payload):
         return result
 
     except requests.exceptions.ConnectionError:
-        frappe.throw("Cannot connect to VSDC. Is it running?")
+        raise zra_exception.ZRAConnectionError("ZRA Network Error.")
+
     except requests.exceptions.Timeout:
         frappe.throw("VSDC request timed out.")
     except Exception as e:
