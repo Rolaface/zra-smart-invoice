@@ -597,13 +597,7 @@ def on_item_save(doc, method):
 
         else:
             # ── ZRA fail → rollback only on fresh insert ──
-            if method == "after_insert":
-                frappe.delete_doc(
-                    "Item", doc.name,
-                    force=True,
-                    ignore_permissions=True
-                )
-                frappe.db.commit()
+
             frappe.throw(
                 f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
                 " — Item NOT saved."
@@ -612,20 +606,6 @@ def on_item_save(doc, method):
     except frappe.ValidationError:
         raise
     except Exception as e:
-        # ── Connection fail → rollback on fresh insert ──
-        if method == "after_insert":
-            try:
-                frappe.delete_doc(
-                    "Item", doc.name,
-                    force=True,
-                    ignore_permissions=True
-                )
-                frappe.db.commit()
-            except Exception as del_err:
-                frappe.log_error(
-                    title=f"ZRA Rollback Failed: {doc.item_code}",
-                    message=str(del_err)
-                )
 
         frappe.log_error(
             title=f"ZRA Item Sync Failed: {doc.item_code}",
@@ -673,11 +653,13 @@ def on_sales_invoice_submit(doc, method):
             doc.custom_details[0].barcode_data = zra_data.get("qrCodeUrl", "")
             doc.custom_details[0].zra_response = zra_data
         else:
-            frappe.throw(
-                f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
-            )
+            raise zra_exception.ZRAResponseError(result.get("resultMsg"), doc = doc, result = result)
+
     except zra_exception.ZRAConnectionError as e:
         raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc, result=result)
+    
+    except zra_exception.ZRAResponseError as e:
+        raise e
 
     except Exception as e:
         frappe.log_error(str(e), f"ZRA Invoice Submit Failed: {doc.name}")
