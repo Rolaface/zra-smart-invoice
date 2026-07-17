@@ -997,7 +997,8 @@ def on_purchase_invoice_submit(doc, method):
             frappe.logger().info(f"✅ ZRA Purchase submitted | {doc.name}")
 
         else:
-           raise zra_exception.ZRAResponseError(result)
+           raise zra_exception.ZRAResponseError(result.get("resultMsg"), doc = doc, result = result)
+
     except zra_exception.ZRAConnectionError as e:
         raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
 

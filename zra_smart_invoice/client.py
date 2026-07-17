@@ -33,9 +33,6 @@ def make_vsdc_request(endpoint, payload):
         response.raise_for_status()
         result = response.json()
 
-        # frappe.logger().info(
-        #     f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}"
-        # )
         print(f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}")
         return result
 
@@ -44,6 +41,7 @@ def make_vsdc_request(endpoint, payload):
 
     except requests.exceptions.Timeout:
         frappe.throw("VSDC request timed out.")
+
     except Exception as e:
         frappe.log_error(
             title="ZRA VSDC Error",
