@@ -36,7 +36,7 @@ def make_vsdc_request(endpoint, payload):
         # frappe.logger().info(
         #     f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}"
         # )
-        print(f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}")  # ✅ replace kiya
+        print(f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}")
         return result
 
     except requests.exceptions.ConnectionError:
@@ -47,6 +47,6 @@ def make_vsdc_request(endpoint, payload):
     except Exception as e:
         frappe.log_error(
             title="ZRA VSDC Error",
-            message=frappe.get_traceback()  # ✅ log_error bhi fix kiya
+            message=frappe.get_traceback()
         )
-        frappe.throw(f"VSDC Error: {str(e)}")
+        raise zra_exception.ZRAConnectionError(str(e))

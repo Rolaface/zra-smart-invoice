@@ -782,36 +782,45 @@ def _build_purchase_payload(doc):
     items = []
 
     for item in doc.items:
-        qty         = round(float(item.qty  or 0), 4)
-        prc         = round(float(item.rate or 0), 2)
-        tot_amt     = round(prc * qty,             2)   # VAT inclusive
-        vat_taxable = round(tot_amt / 1.16,        2)   # ex-VAT
-        vat_amt     = round(tot_amt - vat_taxable, 2)   # VAT amount
+
+        tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
+        if tax_rate is None:
+            frappe.throw(f"Tax rate not found for item {item.item_code} for tax category {doc.tax_category}")
+
+        vat_cat_cd = item.item_tax_template.split("|")[0] if item.item_tax_template else None
+
+        qty         = round(float(item.qty  or 0), 4)        
+        
+        item_doc = frappe.get_doc("Item", item.item_code)
+        net_amt   = round(item.net_amount, 2)
+        vat_amt   = round(net_amt * tax_rate / 100, 2)
+        tot_amt   = round(net_amt + vat_amt, 2)
+        prc       = round(tot_amt / qty, 2)
 
         items.append({
             "itemSeq":         item.idx,
             "itemCd":          item.item_code,
             "itemNm":          item.item_name,
-            "itemClsCd":       "43322555",        # TODO: custom_zra_item_class_code
+            "itemClsCd":       item_doc.custom_item_metadata[0].hsn_code,
             "bcd":             None,
 
             "spplrItemClsCd":  None,
             "spplrItemCd":     None,
             "spplrItemNm":     None,
 
-            "pkgUnitCd":       "BX",              # TODO: custom_zra_pkg_unit_code
-            "pkg":             1,
-            "qtyUnitCd":       "EA",              # TODO: custom_zra_qty_unit_code
+            "pkgUnitCd":       frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code"),
+            "pkg":             item_doc.custom_item_metadata[0].packing_unit,
+            "qtyUnitCd":       frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
 
             "qty":             qty,
-            "prc":             prc,               # VAT inclusive
+            "prc":             prc,
             "splyAmt":         tot_amt,
-            "dcRt":            0.0,
-            "dcAmt":           0.0,
+            "dcRt":            item.discount_percentage,
+            "dcAmt":           item.discount_amount,
 
-            "vatCatCd":        "A",
-            "taxblAmt":        vat_taxable,       # ex-VAT
-            "taxAmt":          vat_amt,           # VAT amount
+            "vatCatCd":        vat_cat_cd.strip(),
+            "taxblAmt":        net_amt,
+            "taxAmt":          vat_amt,
 
             "iplCatCd":        None,
             "tlCatCd":         None,
@@ -832,16 +841,14 @@ def _build_purchase_payload(doc):
     now_dt      = frappe.utils.now_datetime()
 
     return {
-        "tpin":         get_zra_config()["tpin"],
-        "bhfId":        get_zra_config()["bhf_id"],
         "cisInvcNo":    doc.name,
-        "orgInvcNo":    0,
+        "orgInvcNo":    None,
 
         # Supplier info
-        "spplrTpin":    "2000000011",             # TODO: Not Mendatory
-        "spplrBhfId":   "000",                    # TODO: Not Mendatory
+        "spplrTpin":    None,             # TODO: Not Mendatory
+        "spplrBhfId":   None,                    # TODO: Not Mendatory
         "spplrNm":      doc.supplier_name,
-        "spplrInvcNo":  doc.bill_no or "",        # Supplier ka invoice number Not Mendatory
+        "spplrInvcNo":  None,        # Supplier ka invoice number Not Mendatory
 
         "regTyCd":      "M",
         "pchsTyCd":     "N",
@@ -850,8 +857,8 @@ def _build_purchase_payload(doc):
         "pchsSttsCd":   "02",
 
         "pchsDt":       frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
-        "cnclReqDt":    "",
-        "cnclDt":       "",
+        "cnclReqDt":    None,
+        "cnclDt":       None,
         "cfmDt":        now_dt.strftime("%Y%m%d%H%M%S"),
 
         "totItemCnt":   len(items),
@@ -859,7 +866,7 @@ def _build_purchase_payload(doc):
         "totTaxAmt":    tax_amt,
         "totAmt":       grand_total,
 
-        "remark":       "",
+        "remark":       None,
         "regrId":       _zra_user_id(),
         "regrNm":       _zra_user_id(),
         "modrId":       _zra_user_id(),
@@ -975,24 +982,26 @@ def on_purchase_invoice_submit(doc, method):
         return
     try:
         payload = _build_purchase_payload(doc)
-        result  = make_vsdc_request("trnsPurchase/savePurchase", payload)
 
-        # Log har baar
-        # 
-        # _log_zra_transaction("Purchase Invoice", doc.name, "submit", payload, result)
+        result  = make_vsdc_request("trnsPurchase/savePurchase", payload)
+        if result.get("resultCd") in [838, 894]:
+            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
 
         if result.get("resultCd") == "000":
             _safe_set(doc, "custom_zra_submitted",   1)
             _safe_set(doc, "custom_zra_result_code", result.get("resultCd"))
             _safe_set(doc, "custom_zra_result_msg",  result.get("resultMsg"))
+            doc.custom_invoice_metadata[0].zra_response = result
             frappe.logger().info(f"✅ ZRA Purchase submitted | {doc.name}")
+
         else:
-            frappe.throw(
-                f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
-                " — Purchase NOT submitted."
-            )
+            zra_exception.ZRAResponseError(result)
+    except zra_exception.ZRAConnectionError as e:
+        raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
+
     except frappe.ValidationError:
         raise
+
     except Exception as e:
         frappe.log_error(str(e), f"ZRA Purchase Submit Failed: {doc.name}")
         frappe.throw(f"ZRA connection failed: {str(e)} — Purchase NOT submitted.")
