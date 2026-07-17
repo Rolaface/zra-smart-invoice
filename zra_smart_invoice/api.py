@@ -845,15 +845,17 @@ def _build_purchase_payload(doc):
         "orgInvcNo":    None,
 
         # Supplier info
-        "spplrTpin":    None,             # TODO: Not Mendatory
-        "spplrBhfId":   None,                    # TODO: Not Mendatory
+        "spplrTpin":    doc.tax_id if doc.tax_id else None,
+        "spplrBhfId":   None,
         "spplrNm":      doc.supplier_name,
-        "spplrInvcNo":  None,        # Supplier ka invoice number Not Mendatory
+        "spplrInvcNo":  doc.bill_no or None,
 
         "regTyCd":      "M",
         "pchsTyCd":     "N",
         "rcptTyCd":     "P",
-        "pmtTyCd":      "01",                     # TODO: custom_zra_payment_type
+        "pmtTyCd":      PAYMENT_TYPE_CODE_MAP.get(
+                                                        doc.custom_invoice_metadata[0].payment_mode
+                                                    ) if doc.custom_invoice_metadata else None,
         "pchsSttsCd":   "02",
 
         "pchsDt":       frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
@@ -995,12 +997,15 @@ def on_purchase_invoice_submit(doc, method):
             frappe.logger().info(f"✅ ZRA Purchase submitted | {doc.name}")
 
         else:
-            zra_exception.ZRAResponseError(result)
+           raise zra_exception.ZRAResponseError(result)
     except zra_exception.ZRAConnectionError as e:
         raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
 
     except frappe.ValidationError:
         raise
+    
+    except zra_exception.ZRAResponseError as e:
+        raise e
 
     except Exception as e:
         frappe.log_error(str(e), f"ZRA Purchase Submit Failed: {doc.name}")
