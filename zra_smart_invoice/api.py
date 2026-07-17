@@ -657,7 +657,7 @@ def on_sales_invoice_submit(doc, method):
         frappe.log_error(str(result), f"ZRA Invoice Result | {doc.name}")
 
         if result.get("resultCd") in [838, 894]:
-            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
+            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc, result=result)
 
         elif result.get("resultCd") == "000":
             zra_data = result.get("data") or {}
@@ -677,7 +677,7 @@ def on_sales_invoice_submit(doc, method):
                 f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
             )
     except zra_exception.ZRAConnectionError as e:
-        raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
+        raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc, result=result)
 
     except Exception as e:
         frappe.log_error(str(e), f"ZRA Invoice Submit Failed: {doc.name}")
@@ -845,7 +845,7 @@ def _build_purchase_payload(doc):
         "orgInvcNo":    None,
 
         # Supplier info
-        "spplrTpin":    doc.tax_id if doc.tax_id else None,
+        "spplrTpin":    "doc.tax_id if doc.tax_id else None",
         "spplrBhfId":   None,
         "spplrNm":      doc.supplier_name,
         "spplrInvcNo":  doc.bill_no or None,
@@ -987,7 +987,7 @@ def on_purchase_invoice_submit(doc, method):
 
         result  = make_vsdc_request("trnsPurchase/savePurchase", payload)
         if result.get("resultCd") in [838, 894]:
-            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
+            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc, result=result)
 
         if result.get("resultCd") == "000":
             _safe_set(doc, "custom_zra_submitted",   1)
