@@ -315,6 +315,7 @@ def _build_invoice_payload(doc):
     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
     tax_amt     = round(sum(i["vatAmt"]      for i in items), 2)
     grand_total = round(sum(i["totAmt"]      for i in items), 2)
+    taxbl_amt_c2 = round(sum(i["vatTaxblAmt"] for i in items if i["vatCatCd"] == "C2"),2)
 
     # ZRA strict validation
     if round(net_total + tax_amt, 2) != grand_total:
@@ -373,10 +374,11 @@ def _build_invoice_payload(doc):
 
 
         # ✅ Auto — Export C1, Normal A
-        "taxblAmtA":      net_total,
+        "taxblAmtA":      net_total if not doc.po_no else 0,
         "taxblAmtB":      0,
         "taxblAmtC1":     doc.net_total if is_export else 0,
-        "taxblAmtC2":     0, "taxblAmtC3":    0,
+        "taxblAmtC2":     taxbl_amt_c2,
+        "taxblAmtC3":     0,
         "taxblAmtD":      0, "taxblAmtRvat":  0,
         "taxblAmtE":      0, "taxblAmtF":     0,
         "taxblAmtIpl1":   0, "taxblAmtIpl2":  0,
@@ -407,7 +409,7 @@ def _build_invoice_payload(doc):
         "exchangeRt":     1,
 
         "destnCountryCd":  customer_country_code if is_export else "",
-        "lpoNumber":       None,          # ✅ Auto
+        "lpoNumber":       doc.po_no,
 
         "saleCtyCd":      "1",
 
