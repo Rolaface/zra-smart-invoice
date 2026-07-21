@@ -316,7 +316,6 @@ def _build_invoice_payload(doc):
     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
     tax_amt     = round(sum(i["vatAmt"]      for i in items), 2)
     grand_total = round(sum(i["totAmt"]      for i in items), 2)
-    taxbl_amt_c2 = round(sum(i["vatTaxblAmt"] for i in items if i["vatCatCd"] == "C2"),2)
 
     # ZRA strict validation
     if round(net_total + tax_amt, 2) != grand_total:
@@ -376,10 +375,12 @@ def _build_invoice_payload(doc):
         "taxblAmtA":      net_total if "A" in zra_vat_cd else 0,
         "taxblAmtB":      net_total if "B" in zra_vat_cd else 0,
         "taxblAmtC1":     net_total if "C1" in zra_vat_cd else 0,
-        "taxblAmtC2":     taxbl_amt_c2 if "C2" in zra_vat_cd else 0,
-        "taxblAmtC3":     0,
-        "taxblAmtD":      0, "taxblAmtRvat":  0,
-        "taxblAmtE":      0, "taxblAmtF":     0,
+        "taxblAmtC2":     net_total if "C2" in zra_vat_cd else 0,
+        "taxblAmtC3":     net_total if "C3" in zra_vat_cd else 0,
+        "taxblAmtD":      net_total if "D" in zra_vat_cd else 0, 
+        "taxblAmtRvat":  0,
+        "taxblAmtE":      0, 
+        "taxblAmtF":     0,
         "taxblAmtIpl1":   0, "taxblAmtIpl2":  0,
         "taxblAmtTl":     0, "taxblAmtEcm":   0,
         "taxblAmtExeeg":  0, "taxblAmtTot":   0,
@@ -391,10 +392,12 @@ def _build_invoice_payload(doc):
 
         # ✅ Auto — Export 0 tax, Normal tax_amt
         "taxAmtA": tax_amt if "A" in zra_vat_cd else 0,
-        "taxAmtB": tax_amt if "B" in zra_vat_cd else 0,       
-        "taxAmtC1":  tax_amt if "C1" in zra_vat_cd else 0,
+        "taxAmtB": tax_amt if "B" in zra_vat_cd else 0,
+        "taxAmtC1": tax_amt if "C1" in zra_vat_cd else 0,
         "taxAmtC2": tax_amt if "C2" in zra_vat_cd else 0,
-        "taxAmtC3":       0, "taxAmtD":      0, "taxAmtRvat":  0,
+        "taxAmtC3": tax_amt if "C3" in  zra_vat_cd else 0,
+        "taxAmtD": tax_amt if "D" in  zra_vat_cd else 0,
+        "taxAmtRvat":  0,
         "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
         "taxAmtExeeg":    0, "taxAmtTot":    0,
