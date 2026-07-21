@@ -328,23 +328,28 @@ def _build_invoice_payload(doc):
         frappe.throw("Please select a payment mode for the Sales Invoice.")
     customer_country = frappe.get_value("Address", f"{doc.customer}-Shipping", "country")
     customer_country_code = frappe.get_value("Country", customer_country, "code").upper() if customer_country else ""
-    reason = None
+    reason_code = None
+    reason_code_name = None
     description = None
-    if doc.is_return == 1:
+    zra_response = {}
+    
+    if doc.is_return == 1 or is_debit:
         try:
-            reason_details = json.loads(sales_invoice_doc.custom_details[0].reason) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].reason else {}
-            reason = reason_details.get("code", "03")
+            reason_details = json.loads(doc.custom_details[0].reason) if doc.custom_details and doc.custom_details[0].reason else {}
+            reason_code = reason_details.get("code", "03")
+            reason_code_name = reason_details.get("reason")
             description = reason_details.get("description", "Credit Note")
         except Exception:
-            reason = "03"
+            reason_code = "03"
 
-        sales_invoice_doc = frappe.get_doc("Sales Invoice", doc.return_against)
-        zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
+        if doc.return_against:
+            sales_invoice_doc = frappe.get_doc("Sales Invoice", doc.return_against)
+            zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
     payload = {
         # ✅ Auto detect
-        "orgInvcNo":     zra_response.get("rcptNo") if doc.is_return == 1 and zra_response else 0,
+        "orgInvcNo":      zra_response.get("rcptNo") if (doc.is_return == 1 or is_debit) and zra_response else 0,
         "cisInvcNo":      doc.name,
-        "orgSdcId":       zra_response.get("sdcId") if doc.is_return == 1 and zra_response else None,
+        "orgSdcId":       zra_response.get("sdcId") if (doc.is_return == 1 or is_debit) and zra_response else None,
         "custTpin":       frappe.get_value("Customer", doc.customer, "tax_id") or None,
         "custNm":         doc.customer_name,
 
@@ -361,12 +366,12 @@ def _build_invoice_payload(doc):
         "cnclReqDt":      now_dt.strftime("%Y%m%d%H%M%S") if doc.is_return == 1 else None,
         "cnclDt":         now_dt.strftime("%Y%m%d%H%M%S") if doc.is_return == 1 else None,
         "rfdDt":          None,
-        "rfdRsnCd":       reason,
+        "rfdRsnCd":       reason_code if doc.is_return == 1 else None,
 
         "totItemCnt":     len(items),
 
-        "dbtRsnCd":       "03" if is_debit else "",   # ✅ Auto
-        "invcAdjustReason": "",
+        "dbtRsnCd":       reason_code if is_debit else "",
+        "invcAdjustReason": reason_code_name if is_debit else "",
         "cashDcRt":       0,
         "cashDcAmt":      0,
 
