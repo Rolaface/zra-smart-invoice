@@ -270,6 +270,7 @@ def _build_invoice_payload(doc):
 
     items = []
 
+    zra_vat_cd = []
     for item in doc.items:
         qty     = abs(round(float(item.qty or 0), 4))
         item_doc = frappe.get_doc("Item", item.item_code)
@@ -281,6 +282,7 @@ def _build_invoice_payload(doc):
         vat_amt   = abs(round(net_amt * tax_rate / 100, 4))
         tot_amt   = abs(round(net_amt + vat_amt, 2))
         prc     = abs(round(tot_amt / qty, 2))
+        zra_vat_cd.append(vat_cat_cd.strip())
         items.append({
             "itemSeq": item.idx,
             "itemCd": item.item_code,
@@ -371,10 +373,10 @@ def _build_invoice_payload(doc):
 
 
         # ✅ Auto — Export C1, Normal A
-        "taxblAmtA":      net_total if not doc.po_no else 0,
-        "taxblAmtB":      0,
-        "taxblAmtC1":     doc.net_total if is_export else 0,
-        "taxblAmtC2":     taxbl_amt_c2,
+        "taxblAmtA":      net_total if "A" in zra_vat_cd else 0,
+        "taxblAmtB":      net_total if "B" in zra_vat_cd else 0,
+        "taxblAmtC1":     net_total if "C1" in zra_vat_cd else 0,
+        "taxblAmtC2":     taxbl_amt_c2 if "C2" in zra_vat_cd else 0,
         "taxblAmtC3":     0,
         "taxblAmtD":      0, "taxblAmtRvat":  0,
         "taxblAmtE":      0, "taxblAmtF":     0,
@@ -388,8 +390,10 @@ def _build_invoice_payload(doc):
         "taxRtTl": 1.5, "taxRtEcm": 5, "taxRtExeeg": 3, "taxRtTot": 0,
 
         # ✅ Auto — Export 0 tax, Normal tax_amt
-        "taxAmtA":        tax_amt,
-        "taxAmtB":        0, "taxAmtC1":     0, "taxAmtC2":    0,
+        "taxAmtA": tax_amt if "A" in zra_vat_cd else 0,
+        "taxAmtB": tax_amt if "B" in zra_vat_cd else 0,       
+        "taxAmtC1":  tax_amt if "C1" in zra_vat_cd else 0,
+        "taxAmtC2": tax_amt if "C2" in zra_vat_cd else 0,
         "taxAmtC3":       0, "taxAmtD":      0, "taxAmtRvat":  0,
         "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
