@@ -1258,3 +1258,147 @@ def _get_sar_type(stock_entry_type):
         "Write Off": "06",           # Loss
     }
     return mapping.get(stock_entry_type, "02")
+
+def on_stock_reconciliation_submit(doc, method):
+    """
+    Hook: before_submit on Stock Reconciliation
+    1. saveStockItems  → adjustment ZRA mein report karo
+    2. saveStockMaster → current stock quantities update karo
+
+    NOTE: Ye function apne khud ke local helpers use karta hai
+    (_build_stock_reco_items_payload / _build_stock_reco_master_payload)
+    taaki Stock Entry wale shared functions se koi conflict na ho.
+    """
+    if not is_zra_enabled():
+        return
+
+    try:
+        stock_items_payload = _build_stock_reco_items_payload(doc)
+        stock_items_result = make_vsdc_request("stock/saveStockItems", stock_items_payload)
+        if stock_items_result.get("resultCd") != "000":
+            frappe.throw(
+                f"ZRA Stock Items Error ({stock_items_result.get('resultCd')}): "
+                f"{stock_items_result.get('resultMsg')} — Stock Reconciliation NOT submitted."
+            )
+
+        stock_master_payload = _build_stock_reco_master_payload(doc)
+        stock_master_result = make_vsdc_request("stockMaster/saveStockMaster", stock_master_payload)
+        if stock_master_result.get("resultCd") != "000":
+            frappe.throw(
+                f"ZRA Stock Master Error ({stock_master_result.get('resultCd')}): "
+                f"{stock_master_result.get('resultMsg')} — Stock Reconciliation NOT submitted."
+            )
+
+        frappe.logger().info(f"✅ ZRA Stock updated | {doc.name}")
+
+    except frappe.ValidationError:
+        raise
+    except Exception as e:
+        frappe.log_error(str(e), f"ZRA Stock Reconciliation Failed: {doc.name}")
+        frappe.throw(f"ZRA connection failed: {str(e)} — Stock Reconciliation NOT submitted.")
+
+
+def _build_stock_reco_items_payload(doc):
+    """Stock Reconciliation ke liye standalone payload builder (Stock Entry wale se independent)"""
+    item_list = []
+    total_taxable = 0
+    total_tax = 0
+    total_amt = 0
+
+    UOM_MAP = {
+        "Nos": "U", "Acre": "U", "Kg": "KG", "Ltr": "LT",
+        "Meter": "MT", "Box": "BX", "Bag": "BA", "Each": "EA",
+    }
+    PKG_UNIT_MAP = {
+        "Box": "BX", "Bag": "BA", "Bottle": "BT", "Each": "EA", "": "BX",
+    }
+
+    for idx, item in enumerate(doc.items, start=1):
+        item_class_code = frappe.db.get_value(
+            "Custom Item Details",
+            {"parent": item.item_code},
+            "hsn_code"
+        ) or ""
+
+        pkg_unit = "BX"
+        uom = "U"
+
+        qty = item.qty or 0
+        rate = item.valuation_rate or 0
+        sply_amt = qty * rate
+        taxable_amt = round(sply_amt / 1.16, 4) # Vat 16 percent for ZRA.
+        tax_amt = round(sply_amt - taxable_amt, 4)
+        total_taxable += taxable_amt
+        total_tax += tax_amt
+        total_amt += sply_amt
+
+        exp_date = ""
+        if item.batch_no:
+            exp = frappe.db.get_value("Batch", item.batch_no, "expiry_date")
+            exp_date = str(exp).replace("-", "") if exp else ""
+
+        item_list.append({
+            "itemSeq": idx,
+            "itemCd": item.item_code,
+            "itemClsCd": item_class_code,
+            "itemNm": item.item_name,
+            "pkgUnitCd": PKG_UNIT_MAP.get(pkg_unit, "BX"),
+            "qtyUnitCd": UOM_MAP.get(uom, "U"),
+            "qty": qty,
+            "prc": rate,
+            "splyAmt": round(sply_amt, 2),
+            "taxblAmt": round(taxable_amt, 4),
+            "vatCatCd": "A",
+            "taxAmt": round(tax_amt, 4),
+            "totAmt": round(sply_amt, 2),
+            "totDcAmt": 0,
+            "iplCatCd": "IPL1",
+            "tlCatCd": "TL",
+            "exciseTxCatCd": "EXEEG",
+            "iplAmt": 0,
+            "tlAmt": 0,
+            "exciseTxAmt": 0,
+            "itemExprDt": exp_date,
+            "pkg": item.qty or 0,
+            "bcd": ""
+        })
+
+    return {
+        "sarNo": _get_next_sar_no(),
+        "orgSarNo": 0,
+        "regTyCd": "M",
+        "sarTyCd": "16", # stock movement category for ZRA. Need to verify this form ZRA.
+        "ocrnDt": str(doc.posting_date).replace("-", ""),
+        "totItemCnt": len(item_list),
+        "totTaxblAmt": round(total_taxable, 4),
+        "totTaxAmt": round(total_tax, 4),
+        "totAmt": round(total_amt, 4),
+        "remark": doc.get("remarks") or "",
+        "regrId": doc.owner or "Admin",
+        "regrNm": doc.owner or "Admin",
+        "modrNm": doc.modified_by or "Admin",
+        "modrId": doc.modified_by or "Admin",
+        "itemList": item_list
+    }
+
+
+def _build_stock_reco_master_payload(doc):
+    """Stock Reconciliation ke liye standalone stock master payload (item.warehouse use karta hai)"""
+    stock_item_list = []
+    for item in doc.items:
+        rsd_qty = frappe.db.get_value(
+            "Bin",
+            {"item_code": item.item_code, "warehouse": item.warehouse},
+            "actual_qty"
+        ) or 0
+        stock_item_list.append({
+            "itemCd": item.item_code,
+            "rsdQty": rsd_qty
+        })
+    return {
+        "regrId": doc.owner or "Admin",
+        "regrNm": doc.owner or "Admin",
+        "modrNm": doc.modified_by or "Admin",
+        "modrId": doc.modified_by or "Admin",
+        "stockItemList": stock_item_list
+    }

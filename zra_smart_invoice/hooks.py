@@ -48,6 +48,9 @@ doc_events = {
     "Customer": {
         "validate": "zra_smart_invoice.patches.customer.before_validate_hooks.before_validate",
     },
+    "Stock Reconciliation": {
+    "before_submit": "zra_smart_invoice.api.on_stock_reconciliation_submit",
+    },
 }
 
 scheduler_events = {
