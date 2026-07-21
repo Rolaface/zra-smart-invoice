@@ -266,7 +266,6 @@ def _build_invoice_payload(doc):
     is_return = doc.is_return
     is_debit  = getattr(doc, "is_debit_note", False)
 
-    vat_cat   = "C1" if is_export else ("D" if doc.tax_category == "Exempt" else "A")
     rcpt_type = "R"  if is_return else ("D" if is_debit else "S")
 
     items = []
@@ -342,12 +341,10 @@ def _build_invoice_payload(doc):
         zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
     payload = {
         # ✅ Auto detect
-        "tpin":          get_zra_config()["tpin"],
-        "bhfId":         get_zra_config()["bhf_id"],
         "orgInvcNo":     zra_response.get("rcptNo") if doc.is_return == 1 and zra_response else 0,
         "cisInvcNo":      doc.name,
         "orgSdcId":       zra_response.get("sdcId") if doc.is_return == 1 and zra_response else None,
-        "custTpin":       frappe.get_value("Customer", doc.customer, "tax_id") or "",
+        "custTpin":       frappe.get_value("Customer", doc.customer, "tax_id") or None,
         "custNm":         doc.customer_name,
 
         "salesTyCd":      "N",
@@ -409,7 +406,7 @@ def _build_invoice_payload(doc):
         "exchangeRt":     1,
 
         "destnCountryCd":  customer_country_code if is_export else "",
-        "lpoNumber":       doc.po_no,
+        "lpoNumber":       doc.po_no if doc.po_no else None,
 
         "saleCtyCd":      "1",
 
