@@ -5,6 +5,7 @@ from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
 import json
 from custom_api.config import zra_exception
+from collections import defaultdict
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -270,6 +271,9 @@ def _build_invoice_payload(doc):
 
     items = []
 
+    taxbl_by_cat = defaultdict(float)
+    tax_by_cat   = defaultdict(float)
+
     zra_vat_cd = []
     for item in doc.items:
         qty     = abs(round(float(item.qty or 0), 4))
@@ -283,6 +287,7 @@ def _build_invoice_payload(doc):
         tot_amt   = abs(round(net_amt + vat_amt, 2))
         prc     = abs(round(tot_amt / qty, 2))
         zra_vat_cd.append(vat_cat_cd.strip())
+
         items.append({
             "itemSeq": item.idx,
             "itemCd": item.item_code,
@@ -312,6 +317,11 @@ def _build_invoice_payload(doc):
             "exciseTxAmt": 0.0,
             "totAmt": tot_amt
         })
+        taxbl_by_cat[vat_cat_cd.strip()] += net_amt
+        tax_by_cat[vat_cat_cd.strip()]   += vat_amt
+
+    taxbl_by_cat = {k: round(v, 2) for k, v in taxbl_by_cat.items()}
+    tax_by_cat   = {k: round(v, 2) for k, v in tax_by_cat.items()}
 
     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
     tax_amt     = round(sum(i["vatAmt"]      for i in items), 2)
@@ -345,6 +355,8 @@ def _build_invoice_payload(doc):
         if doc.return_against:
             sales_invoice_doc = frappe.get_doc("Sales Invoice", doc.return_against)
             zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
+    print(type(taxbl_by_cat))
+    print(taxbl_by_cat.get("A"))
     payload = {
         # ✅ Auto detect
         "orgInvcNo":      zra_response.get("rcptNo") if (doc.is_return == 1 or is_debit) and zra_response else 0,
@@ -377,12 +389,12 @@ def _build_invoice_payload(doc):
 
 
         # ✅ Auto — Export C1, Normal A
-        "taxblAmtA":      net_total if "A" in zra_vat_cd else 0,
-        "taxblAmtB":      net_total if "B" in zra_vat_cd else 0,
-        "taxblAmtC1":     net_total if "C1" in zra_vat_cd else 0,
-        "taxblAmtC2":     net_total if "C2" in zra_vat_cd else 0,
-        "taxblAmtC3":     net_total if "C3" in zra_vat_cd else 0,
-        "taxblAmtD":      net_total if "D" in zra_vat_cd else 0, 
+        "taxblAmtA":      taxbl_by_cat.get("A", 0),
+        "taxblAmtB":      taxbl_by_cat.get("B", 0),
+        "taxblAmtC1":     taxbl_by_cat.get("C1", 0),
+        "taxblAmtC2":     taxbl_by_cat.get("C2", 0),
+        "taxblAmtC3":     taxbl_by_cat.get("C3", 0),
+        "taxblAmtD":      taxbl_by_cat.get("D", 0), 
         "taxblAmtRvat":  0,
         "taxblAmtE":      0, 
         "taxblAmtF":     0,
@@ -396,12 +408,12 @@ def _build_invoice_payload(doc):
         "taxRtTl": 1.5, "taxRtEcm": 5, "taxRtExeeg": 3, "taxRtTot": 0,
 
         # ✅ Auto — Export 0 tax, Normal tax_amt
-        "taxAmtA": tax_amt if "A" in zra_vat_cd else 0,
-        "taxAmtB": tax_amt if "B" in zra_vat_cd else 0,
-        "taxAmtC1": tax_amt if "C1" in zra_vat_cd else 0,
-        "taxAmtC2": tax_amt if "C2" in zra_vat_cd else 0,
-        "taxAmtC3": tax_amt if "C3" in  zra_vat_cd else 0,
-        "taxAmtD": tax_amt if "D" in  zra_vat_cd else 0,
+        "taxAmtA": tax_by_cat.get("A", 0),
+        "taxAmtB": tax_by_cat.get("B", 0),
+        "taxAmtC1": tax_by_cat.get("C1", 0),
+        "taxAmtC2": tax_by_cat.get("C2", 0),
+        "taxAmtC3": tax_by_cat.get("C3", 0),
+        "taxAmtD": tax_by_cat.get("D", 0),
         "taxAmtRvat":  0,
         "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,

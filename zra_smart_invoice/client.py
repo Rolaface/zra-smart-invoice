@@ -36,8 +36,8 @@ def make_vsdc_request(endpoint, payload):
         print(f"ZRA Response ← {result.get('resultCd')}: {result.get('resultMsg')}")
         return result
 
-    except requests.exceptions.ConnectionError:
-        raise zra_exception.ZRAConnectionError("ZRA Network Error.")
+    except requests.exceptions.ConnectionError as e:
+        raise e
 
     except requests.exceptions.Timeout:
         frappe.throw("VSDC request timed out.")
