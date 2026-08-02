@@ -1,3 +1,4 @@
+from zra_smart_invoice.modules.mtv.utils import get_item_tax_template
 from zra_smart_invoice.api import get_item_type_name
 from zra_smart_invoice.client import make_vsdc_request
 import frappe
@@ -53,6 +54,10 @@ def get_rrp_items(mfg_tpin):
                 item["orgnNatCd"] = frappe.get_value("Country", {"code": item.get("orgnNatCd")}, "country_name")
             if item.get("qtyUnitCd"):
                 item["qtyUnitCd"] = frappe.get_value("UOM", {"common_code": item.get("qtyUnitCd")}, "uom_name")
+
+            tax_template = get_item_tax_template("A")
+            item["tax"] = tax_template if tax_template else None
+            
         return result   
     except Exception as e:
         raise e
