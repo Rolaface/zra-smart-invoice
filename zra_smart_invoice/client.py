@@ -15,7 +15,9 @@ def make_vsdc_request(endpoint, payload):
         frappe.throw("ZRA is not configured for this site.")
 
     # Auto inject credentials into every request
-    payload["tpin"] = config["tpin"]
+    if not payload.get("tpin"):
+        payload["tpin"] = config["tpin"]
+
     payload["bhfId"] = config["bhf_id"]
 
     url = f"{config['vsdc_url']}/{endpoint}"

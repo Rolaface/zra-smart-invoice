@@ -12,3 +12,9 @@ PAYMENT_TYPE_CODE_MAP = {
     "Bank transfer": "08",
     "Other": "07",
 }
+
+ITEM_TYPE_CODE_MAP = {
+    "Raw Material":     "1",
+    "Finished Product": "2",
+    "Service":          "3",
+}

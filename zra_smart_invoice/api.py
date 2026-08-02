@@ -1,4 +1,4 @@
-from zra_smart_invoice.config.constant import PAYMENT_TYPE_CODE_MAP
+from zra_smart_invoice.config.constant import ITEM_TYPE_CODE_MAP, PAYMENT_TYPE_CODE_MAP
 import frappe
 import requests
 from zra_smart_invoice.config import is_zra_enabled, get_zra_config
@@ -21,17 +21,14 @@ from collections import defaultdict
 # HELPER — safely set a field on doc (skip if column not yet created)
 # ───────────────────────────────────────────────────────────────────
 
-ITEM_TYPE_CODE_MAP = {
-    "Raw Material":     "1",
-    "Finished Product": "2",
-    "Service":          "3",
-}
-
-ITEM_TYPE_CODE_DEFAULT = "2"
-
 def get_item_type_code(item_group: str) -> str:
    
-    return ITEM_TYPE_CODE_MAP.get(item_group, ITEM_TYPE_CODE_DEFAULT)
+    return ITEM_TYPE_CODE_MAP.get(item_group, "2")
+
+def get_item_type_name(item_type_code: str) -> str:
+    for name, code in ITEM_TYPE_CODE_MAP.items():
+        if code == item_type_code:
+            return name
 
 def _safe_set(doc, field, value):
     """
