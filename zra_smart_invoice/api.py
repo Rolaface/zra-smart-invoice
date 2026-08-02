@@ -423,8 +423,8 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":   "ZMW",
-        "exchangeRt":     1,
+        "currencyTyCd":   doc.currency if doc.currency else "ZMW",
+        "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export else "",
         "lpoNumber":       doc.po_no if doc.po_no else None,
