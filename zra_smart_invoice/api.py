@@ -144,6 +144,7 @@ def _build_invoice_payload(doc):
         tot_amt   = abs(round(net_amt + vat_amt, 2))
         prc     = abs(round(tot_amt / qty, 2))
         zra_vat_cd.append(vat_cat_cd.strip())
+        is_mtv = item_doc.custom_item_metadata[0].is_mtv if item_doc.custom_item_metadata else False
 
         items.append({
             "itemSeq": item.idx,
@@ -155,6 +156,7 @@ def _build_invoice_payload(doc):
             "pkg": item_doc.custom_item_metadata[0].packing_unit,
             "qtyUnitCd": frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
             "qty": qty,
+            "rrp": item_doc.custom_item_metadata[0].rrp_rate if is_mtv else None,
             "prc": prc,
             "splyAmt": tot_amt,
             "dcRt": item.discount_percentage,
