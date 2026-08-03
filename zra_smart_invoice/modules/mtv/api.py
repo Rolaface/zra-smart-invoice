@@ -44,7 +44,185 @@ def get_rrp_items(mfg_tpin):
                         "regrNm": "Admin",
                         "modrNm": "Admin",
                         "modrId": "1231"
-                      }
+                      },
+                      {
+                                              "itemCd": "itemCode2",
+                                              "itemClsCd": "50102515",
+                                              "itemTyCd": "3",
+                                              "itemNm": "frooti",
+                                              "itemDesc": "This is fanta",
+                                              "orgnNatCd": "ZM",
+                                              "pkgUnitCd": "BG",
+                                              "qtyUnitCd": "BX",
+                                              "rrp": 123.6789,
+                                              "useYn": "Y",
+                                              "regrId": "admin",
+                                              "regrNm": "Admin",
+                                              "modrNm": "Admin",
+                                              "modrId": "1231"
+                                            },
+                                            {
+                                                                    "itemCd": "itemCode2",
+                                                                    "itemClsCd": "50102515",
+                                                                    "itemTyCd": "3",
+                                                                    "itemNm": "frooti",
+                                                                    "itemDesc": "This is fanta",
+                                                                    "orgnNatCd": "ZM",
+                                                                    "pkgUnitCd": "BG",
+                                                                    "qtyUnitCd": "BX",
+                                                                    "rrp": 123.6789,
+                                                                    "useYn": "Y",
+                                                                    "regrId": "admin",
+                                                                    "regrNm": "Admin",
+                                                                    "modrNm": "Admin",
+                                                                    "modrId": "1231"
+                                                                  },
+                                                                  {
+                                                                                          "itemCd": "itemCode2",
+                                                                                          "itemClsCd": "50102515",
+                                                                                          "itemTyCd": "3",
+                                                                                          "itemNm": "frooti",
+                                                                                          "itemDesc": "This is fanta",
+                                                                                          "orgnNatCd": "ZM",
+                                                                                          "pkgUnitCd": "BG",
+                                                                                          "qtyUnitCd": "BX",
+                                                                                          "rrp": 123.6789,
+                                                                                          "useYn": "Y",
+                                                                                          "regrId": "admin",
+                                                                                          "regrNm": "Admin",
+                                                                                          "modrNm": "Admin",
+                                                                                          "modrId": "1231"
+                                                                                        },
+                                                                                        {
+                                                                                                                "itemCd": "itemCode2",
+                                                                                                                "itemClsCd": "50102515",
+                                                                                                                "itemTyCd": "3",
+                                                                                                                "itemNm": "frooti",
+                                                                                                                "itemDesc": "This is fanta",
+                                                                                                                "orgnNatCd": "ZM",
+                                                                                                                "pkgUnitCd": "BG",
+                                                                                                                "qtyUnitCd": "BX",
+                                                                                                                "rrp": 123.6789,
+                                                                                                                "useYn": "Y",
+                                                                                                                "regrId": "admin",
+                                                                                                                "regrNm": "Admin",
+                                                                                                                "modrNm": "Admin",
+                                                                                                                "modrId": "1231"
+                                                                                                              },
+                                                                                                              {
+                                                                                                                                      "itemCd": "itemCode2",
+                                                                                                                                      "itemClsCd": "50102515",
+                                                                                                                                      "itemTyCd": "3",
+                                                                                                                                      "itemNm": "frooti",
+                                                                                                                                      "itemDesc": "This is fanta",
+                                                                                                                                      "orgnNatCd": "ZM",
+                                                                                                                                      "pkgUnitCd": "BG",
+                                                                                                                                      "qtyUnitCd": "BX",
+                                                                                                                                      "rrp": 123.6789,
+                                                                                                                                      "useYn": "Y",
+                                                                                                                                      "regrId": "admin",
+                                                                                                                                      "regrNm": "Admin",
+                                                                                                                                      "modrNm": "Admin",
+                                                                                                                                      "modrId": "1231"
+                                                                                                                                    },
+                                                                                                                                    {
+                                                                                                                                                            "itemCd": "itemCode2",
+                                                                                                                                                            "itemClsCd": "50102515",
+                                                                                                                                                            "itemTyCd": "3",
+                                                                                                                                                            "itemNm": "frooti",
+                                                                                                                                                            "itemDesc": "This is fanta",
+                                                                                                                                                            "orgnNatCd": "ZM",
+                                                                                                                                                            "pkgUnitCd": "BG",
+                                                                                                                                                            "qtyUnitCd": "BX",
+                                                                                                                                                            "rrp": 123.6789,
+                                                                                                                                                            "useYn": "Y",
+                                                                                                                                                            "regrId": "admin",
+                                                                                                                                                            "regrNm": "Admin",
+                                                                                                                                                            "modrNm": "Admin",
+                                                                                                                                                            "modrId": "1231"
+                                                                                                                                                          },
+                                                                                                                                                          {
+                                                                                                                                                                                  "itemCd": "itemCode2",
+                                                                                                                                                                                  "itemClsCd": "50102515",
+                                                                                                                                                                                  "itemTyCd": "3",
+                                                                                                                                                                                  "itemNm": "frooti",
+                                                                                                                                                                                  "itemDesc": "This is fanta",
+                                                                                                                                                                                  "orgnNatCd": "ZM",
+                                                                                                                                                                                  "pkgUnitCd": "BG",
+                                                                                                                                                                                  "qtyUnitCd": "BX",
+                                                                                                                                                                                  "rrp": 123.6789,
+                                                                                                                                                                                  "useYn": "Y",
+                                                                                                                                                                                  "regrId": "admin",
+                                                                                                                                                                                  "regrNm": "Admin",
+                                                                                                                                                                                  "modrNm": "Admin",
+                                                                                                                                                                                  "modrId": "1231"
+                                                                                                                                                                                },
+                                                                                                                                                                                {
+                                                                                                                                                                                                        "itemCd": "itemCode2",
+                                                                                                                                                                                                        "itemClsCd": "50102515",
+                                                                                                                                                                                                        "itemTyCd": "3",
+                                                                                                                                                                                                        "itemNm": "frooti",
+                                                                                                                                                                                                        "itemDesc": "This is fanta",
+                                                                                                                                                                                                        "orgnNatCd": "ZM",
+                                                                                                                                                                                                        "pkgUnitCd": "BG",
+                                                                                                                                                                                                        "qtyUnitCd": "BX",
+                                                                                                                                                                                                        "rrp": 123.6789,
+                                                                                                                                                                                                        "useYn": "Y",
+                                                                                                                                                                                                        "regrId": "admin",
+                                                                                                                                                                                                        "regrNm": "Admin",
+                                                                                                                                                                                                        "modrNm": "Admin",
+                                                                                                                                                                                                        "modrId": "1231"
+                                                                                                                                                                                                      },
+                                                                                                                                                                                                      {
+                                                                                                                                                                                                                              "itemCd": "itemCode2",
+                                                                                                                                                                                                                              "itemClsCd": "50102515",
+                                                                                                                                                                                                                              "itemTyCd": "3",
+                                                                                                                                                                                                                              "itemNm": "frooti",
+                                                                                                                                                                                                                              "itemDesc": "This is fanta",
+                                                                                                                                                                                                                              "orgnNatCd": "ZM",
+                                                                                                                                                                                                                              "pkgUnitCd": "BG",
+                                                                                                                                                                                                                              "qtyUnitCd": "BX",
+                                                                                                                                                                                                                              "rrp": 123.6789,
+                                                                                                                                                                                                                              "useYn": "Y",
+                                                                                                                                                                                                                              "regrId": "admin",
+                                                                                                                                                                                                                              "regrNm": "Admin",
+                                                                                                                                                                                                                              "modrNm": "Admin",
+                                                                                                                                                                                                                              "modrId": "1231"
+                                                                                                                                                                                                                            },
+                                                                                                                                                                                                                            {
+                                                                                                                                                                                                                                                    "itemCd": "itemCode2",
+                                                                                                                                                                                                                                                    "itemClsCd": "50102515",
+                                                                                                                                                                                                                                                    "itemTyCd": "3",
+                                                                                                                                                                                                                                                    "itemNm": "frooti",
+                                                                                                                                                                                                                                                    "itemDesc": "This is fanta",
+                                                                                                                                                                                                                                                    "orgnNatCd": "ZM",
+                                                                                                                                                                                                                                                    "pkgUnitCd": "BG",
+                                                                                                                                                                                                                                                    "qtyUnitCd": "BX",
+                                                                                                                                                                                                                                                    "rrp": 123.6789,
+                                                                                                                                                                                                                                                    "useYn": "Y",
+                                                                                                                                                                                                                                                    "regrId": "admin",
+                                                                                                                                                                                                                                                    "regrNm": "Admin",
+                                                                                                                                                                                                                                                    "modrNm": "Admin",
+                                                                                                                                                                                                                                                    "modrId": "1231"
+                                                                                                                                                                                                                                                  },
+                                                                                                                                                                                                                                                  {
+                                                                                                                                                                                                                                                                          "itemCd": "itemCode2",
+                                                                                                                                                                                                                                                                          "itemClsCd": "50102515",
+                                                                                                                                                                                                                                                                          "itemTyCd": "3",
+                                                                                                                                                                                                                                                                          "itemNm": "frooti",
+                                                                                                                                                                                                                                                                          "itemDesc": "This is fanta",
+                                                                                                                                                                                                                                                                          "orgnNatCd": "ZM",
+                                                                                                                                                                                                                                                                          "pkgUnitCd": "BG",
+                                                                                                                                                                                                                                                                          "qtyUnitCd": "BX",
+                                                                                                                                                                                                                                                                          "rrp": 123.6789,
+                                                                                                                                                                                                                                                                          "useYn": "Y",
+                                                                                                                                                                                                                                                                          "regrId": "admin",
+                                                                                                                                                                                                                                                                          "regrNm": "Admin",
+                                                                                                                                                                                                                                                                          "modrNm": "Admin",
+                                                                                                                                                                                                                                                                          "modrId": "1231"
+                                                                                                                                                                                                                                                                        }
+
+
                     ]
                   }
         for item in result.get("itemList"):
@@ -55,7 +233,7 @@ def get_rrp_items(mfg_tpin):
             if item.get("qtyUnitCd"):
                 item["qtyUnitCd"] = frappe.get_value("UOM", {"common_code": item.get("qtyUnitCd")}, "uom_name")
 
-            tax_template = get_item_tax_template("A")
+            tax_template = get_item_tax_template("B")
             item["tax"] = tax_template if tax_template else None
             
         return result   
