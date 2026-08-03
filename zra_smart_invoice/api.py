@@ -66,6 +66,9 @@ def _build_item_payload(doc):
         orgn_nat_cd = frappe.get_value("Country", doc.country_of_origin, "code").upper()
     else:
         orgn_nat_cd = frappe.get_value("Country", frappe.defaults.get_user_default("country"), "code").upper()
+
+    is_mtv_item = doc.custom_item_metadata[0].is_mtv if doc.custom_item_metadata else False
+
     return {
         # ── Identity ──────────────────────────────────────────────
         "itemCd":        doc.item_code,           # [STANDARD]
@@ -98,160 +101,17 @@ def _build_item_payload(doc):
         "rentalYn":      "N",
         "useYn":         "Y",
 
+        # MTV Item Details
+        "manufacturerTpin": doc.custom_item_metadata[0].mtv_manufacturer_tpin if is_mtv_item else None,
+        "manufacturerItemCd": doc.custom_item_metadata[0].manufacturerItemCd if is_mtv_item else None,
+        "rrp": doc.custom_item_metadata[0].rrp_rate if is_mtv_item else None,
+
         # ── Audit ─────────────────────────────────────────────────
-        # "regrId":        frappe.session.user,     # [STANDARD]
-        # "regrNm":        frappe.session.user,
-        # "modrId":        frappe.session.user,
-        # "modrNm":        frappe.session.user,
         "regrId": _zra_user_id(),
         "regrNm": _zra_user_id(),
         "modrId": _zra_user_id(),
         "modrNm": _zra_user_id(),
     }
-
-
-def _get_rcpt_type_cd(doc):
-    if doc.is_return:
-        return "R"
-    if hasattr(doc, "is_debit_note") and doc.is_debit_note:
-        return "D"
-    return "S"
-
-
-def _get_vat_cat_cd(doc):
-    """Tax category detect karo"""
-    if doc.tax_category == "Export":
-        return "C1"
-    if doc.tax_category == "Exempt":
-        return "D"
-    return "A"  # Default — Standard VAT
-
-
-def _is_export(doc):
-    return doc.tax_category == "Export"
-
-# def _build_invoice_payload(doc):
-
-#     items = []
-
-#     for item in doc.items:
-#         tax_type = "A"  # VAT 16%
-
-#         qty = round(float(item.qty or 0), 4)
-
-#         prc_raw = float(item.rate or 0)
-#         prc = round(prc_raw, 2)
-
-#         tot_amt = round(prc * qty, 2)
-
-#         # VAT-inclusive logic (correct)
-#         vat_taxable = round(tot_amt / 1.16, 2)
-#         vat_amt     = round(tot_amt - vat_taxable, 2)
-
-#         items.append({
-#             "itemSeq": item.idx,
-#             "itemCd": item.item_code,
-#             "itemNm": item.item_name,
-#             "itemClsCd": "43322555",
-#             "bcd": "",
-
-#             "pkgUnitCd": "BX",
-#             "pkg": 1,
-#             "qtyUnitCd": "EA",
-
-#             "qty": qty,
-#             "prc": prc,
-
-#             "splyAmt": tot_amt,
-#             "dcRt": 0.0,
-#             "dcAmt": 0.0,
-#             "totAmt": tot_amt,
-
-#             "vatCatCd": tax_type,
-#             "vatTaxblAmt": vat_taxable,
-#             "vatAmt": vat_amt,
-
-#             "exciseTxCatCd": None,
-#             "tlCatCd": None,
-#             "iplCatCd": None,
-
-#             "exciseTaxblAmt": 0.0,
-#             "tlTaxblAmt": 0.0,
-#             "iplTaxblAmt": 0.0,
-#             "iplAmt": 0.0,
-#             "tlAmt": 0.0,
-#             "exciseTxAmt": 0.0,
-
-#             "isrccCd": "",
-#             "isrccNm": "",
-#             "isrcAmt": 0.0,
-#         })
-
-#     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
-#     tax_amt     = round(sum(i["vatAmt"] for i in items), 2)
-#     grand_total = round(sum(i["totAmt"] for i in items), 2)
-
-#     # ZRA strict validation
-#     if round(net_total + tax_amt, 2) != grand_total:
-#         raise ValueError(
-#             f"ZRA Mismatch → taxable({net_total}) + tax({tax_amt}) != total({grand_total})"
-#         )
-
-#     now_dt = frappe.utils.now_datetime()
-
-#     payload = {
-#         "orgInvcNo": 0,
-#         "cisInvcNo": doc.name,
-#         "custTpin": "2000000011",
-#         "custNm": doc.customer_name,
-
-#         "salesTyCd": "N",
-#         "rcptTyCd": "S",
-#         "pmtTyCd": "01",
-#         "salesSttsCd": "02",
-
-#         "cfmDt": now_dt.strftime("%Y%m%d%H%M%S"),
-#         "salesDt": frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
-
-#         "totItemCnt": len(items),
-
-#         # ✅ Taxable + Tax
-#         "taxblAmtA": net_total,
-#         "taxAmtA": tax_amt,
-
-#         "totTaxblAmt": net_total,
-#         "totTaxAmt": tax_amt,
-#         "totAmt": grand_total,
-
-#         # ✅ REQUIRED TAX RATE BLOCK (THIS WAS MISSING ❗)
-#         "taxRtA": 16,
-#         "taxRtB": 16,
-#         "taxRtC1": 0,
-#         "taxRtC2": 0,
-#         "taxRtC3": 0,
-#         "taxRtD": 0,
-#         "taxRtRvat": 16,
-#         "taxRtE": 0,
-#         "taxRtF": 10,
-#         "taxRtIpl1": 5,
-#         "taxRtIpl2": 0,
-#         "taxRtTl": 1.5,
-#         "taxRtEcm": 5,
-#         "taxRtExeeg": 3,
-#         "taxRtTot": 0,
-
-#         "currencyTyCd": "ZMW",
-#         "exchangeRt": 1,
-
-#         "regrId": _zra_user_id(),
-#         "regrNm": _zra_user_id(),
-#         "modrId": _zra_user_id(),
-#         "modrNm": _zra_user_id(),
-
-#         "itemList": items,
-#     }
-
-#     return payload
 
 def _build_invoice_payload(doc):
     """
