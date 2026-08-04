@@ -103,7 +103,7 @@ def _build_item_payload(doc):
 
         # MTV Item Details
         "manufacturerTpin": doc.custom_item_metadata[0].mtv_manufacturer_tpin if is_mtv_item else None,
-        "manufacturerItemCd": doc.custom_item_metadata[0].manufacturerItemCd if is_mtv_item else None,
+        "manufacturerItemCd": doc.custom_item_metadata[0].manufactureritemcd if is_mtv_item else None,
         "rrp": doc.custom_item_metadata[0].rrp_rate if is_mtv_item else None,
 
         # ── Audit ─────────────────────────────────────────────────
