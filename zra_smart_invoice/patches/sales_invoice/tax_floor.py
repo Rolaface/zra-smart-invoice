@@ -27,7 +27,7 @@ def get_current_tax_and_net_amount(self, item, tax, item_tax_map):
         if tax.account_head in item_tax_map:
             current_net_amount = item.net_amount
         tax_base_amount = _get_rrp_floored_amount(self, item)
-        current_tax_amount = (tax_rate / 100.0) * tax_base_amount
+        current_tax_amount = abs(round((tax_rate / 100.0) * tax_base_amount,4))
 
     elif tax.charge_type == "On Previous Row Amount":
         current_net_amount = self.doc.get("taxes")[cint(tax.row_id) - 1].tax_amount_for_current_item
@@ -55,8 +55,10 @@ def _get_rrp_floored_amount(self, item):
         self._rrp_cache[item.item_code] = _fetch_rrp(item.item_code)
 
     rrp = self._rrp_cache[item.item_code]
-    if rrp and rrp > flt(item.rate):
-        return rrp * flt(item.qty)
+    item_rate = item.rate + (item.rate*0.16)
+    if rrp and rrp > flt(item_rate):
+        tax_base_amount = abs(round(((rrp/1.16 )* flt(item.qty)), 2))
+        return tax_base_amount
 
     return item.net_amount
 

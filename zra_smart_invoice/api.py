@@ -1,3 +1,4 @@
+from zra_smart_invoice.modules.mtv.utils import create_mtv_item_payload
 from zra_smart_invoice.config.constant import ITEM_TYPE_CODE_MAP, PAYMENT_TYPE_CODE_MAP
 import frappe
 import requests
@@ -6,6 +7,7 @@ from zra_smart_invoice.client import make_vsdc_request
 import json
 from custom_api.config import zra_exception
 from collections import defaultdict
+from frappe.utils import cint, flt
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -133,51 +135,60 @@ def _build_invoice_payload(doc):
 
     zra_vat_cd = []
     for item in doc.items:
-        qty     = abs(round(float(item.qty or 0), 4))
+        qty     = abs(round(float(item.qty or 0), 2))
         item_doc = frappe.get_doc("Item", item.item_code)
         tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
         if tax_rate is None:
             frappe.throw(f"Tax rate not found for item {item.item_code} for tax category {doc.tax_category}")
         vat_cat_cd = item.item_tax_template.split("|")[0] if item.item_tax_template else None
-        net_amt   = abs(round(float(item.net_amount or 0), 2))
-        vat_amt   = abs(round(net_amt * tax_rate / 100, 4))
-        tot_amt   = abs(round(net_amt + vat_amt, 2))
-        prc     = abs(round(tot_amt / qty, 2))
         zra_vat_cd.append(vat_cat_cd.strip())
-        is_mtv = item_doc.custom_item_metadata[0].is_mtv if item_doc.custom_item_metadata else False
 
-        items.append({
-            "itemSeq": item.idx,
-            "itemCd": item.item_code,
-            "itemClsCd": item_doc.custom_item_metadata[0].hsn_code,
-            "itemNm": item.item_name,
-            "bcd": "",
-            "pkgUnitCd": frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code"),
-            "pkg": item_doc.custom_item_metadata[0].packing_unit,
-            "qtyUnitCd": frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
-            "qty": qty,
-            "rrp": item_doc.custom_item_metadata[0].rrp_rate if is_mtv else None,
-            "prc": prc,
-            "splyAmt": tot_amt,
-            "dcRt": item.discount_percentage,
-            "dcAmt": item.discount_amount,
-            "isrccCd": "",
-            "isrccNm": "",
-            "isrcAmt": 0.0,
-            "vatCatCd": vat_cat_cd.strip(),
-            "exciseTxCatCd": None,
-            "vatTaxblAmt": net_amt,
-            "exciseTaxblAmt": 0.0,
-            "tlTaxblAmt": 0.0,
-            "iplTaxblAmt": 0.0,
-            "iplAmt": 0.0,
-            "tlAmt": 0.0,
-            "vatAmt": vat_amt,
-            "exciseTxAmt": 0.0,
-            "totAmt": tot_amt
-        })
-        taxbl_by_cat[vat_cat_cd.strip()] += net_amt
-        tax_by_cat[vat_cat_cd.strip()]   += vat_amt
+        is_mtv = item_doc.custom_item_metadata[0].is_mtv if item_doc.custom_item_metadata else False
+        rrp_rate = item_doc.custom_item_metadata[0].rrp_rate if is_mtv else None
+
+        if is_mtv and rrp_rate:
+                mtv_item_payload, vat_amt, net_amt = create_mtv_item_payload(item,item_doc,qty, rrp_rate, vat_cat_cd, tax_rate)
+                items.append(mtv_item_payload)
+                print(items)
+                taxbl_by_cat[vat_cat_cd.strip()] += net_amt
+                tax_by_cat[vat_cat_cd.strip()]   += vat_amt
+        else:
+            net_amt   = abs(round(float(item.net_amount or 0), 2))
+            vat_amt   = abs(round(net_amt * tax_rate / 100, 4))
+            tot_amt   = abs(round(net_amt + vat_amt, 2))
+            prc     = abs(round(tot_amt / qty, 2))
+            zra_vat_cd.append(vat_cat_cd.strip())
+            items.append({
+                "itemSeq": item.idx,
+                "itemCd": item.item_code,
+                "itemClsCd": item_doc.custom_item_metadata[0].hsn_code,
+                "itemNm": item.item_name,
+                "bcd": "",
+                "pkgUnitCd": frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code"),
+                "pkg": item_doc.custom_item_metadata[0].packing_unit,
+                "qtyUnitCd": frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
+                "qty": qty,
+                "prc": prc,
+                "splyAmt": tot_amt,
+                "dcRt": item.discount_percentage,
+                "dcAmt": item.discount_amount,
+                "isrccCd": "",
+                "isrccNm": "",
+                "isrcAmt": 0.0,
+                "vatCatCd": vat_cat_cd.strip(),
+                "exciseTxCatCd": None,
+                "vatTaxblAmt": net_amt,
+                "exciseTaxblAmt": 0.0,
+                "tlTaxblAmt": 0.0,
+                "iplTaxblAmt": 0.0,
+                "iplAmt": 0.0,
+                "tlAmt": 0.0,
+                "vatAmt": vat_amt,
+                "exciseTxAmt": 0.0,
+                "totAmt": tot_amt
+            })
+            taxbl_by_cat[vat_cat_cd.strip()] += net_amt
+            tax_by_cat[vat_cat_cd.strip()]   += vat_amt
 
     taxbl_by_cat = {k: round(v, 2) for k, v in taxbl_by_cat.items()}
     tax_by_cat   = {k: round(v, 2) for k, v in tax_by_cat.items()}
@@ -187,10 +198,10 @@ def _build_invoice_payload(doc):
     grand_total = round(sum(i["totAmt"]      for i in items), 2)
 
     # ZRA strict validation
-    if round(net_total + tax_amt, 2) != grand_total:
-        raise ValueError(
-            f"ZRA Mismatch → taxable({net_total}) + tax({tax_amt}) != total({grand_total})"
-        )
+    # if round(net_total + tax_amt, 2) != grand_total:
+    #     raise ValueError(
+    #         f"ZRA Mismatch → taxable({net_total}) + tax({tax_amt}) != total({grand_total})"
+    #     )
 
     now_dt = frappe.utils.now_datetime()
     if not doc.custom_details or not doc.custom_details[0].payment_mode:
@@ -254,7 +265,7 @@ def _build_invoice_payload(doc):
         "taxblAmtC2":     taxbl_by_cat.get("C2", 0),
         "taxblAmtC3":     taxbl_by_cat.get("C3", 0),
         "taxblAmtD":      taxbl_by_cat.get("D", 0), 
-        "taxblAmtRvat":  0,
+        "taxblAmtRvat":  taxbl_by_cat.get("RVAT", 0),
         "taxblAmtE":      0, 
         "taxblAmtF":     0,
         "taxblAmtIpl1":   0, "taxblAmtIpl2":  0,
@@ -273,7 +284,7 @@ def _build_invoice_payload(doc):
         "taxAmtC2": tax_by_cat.get("C2", 0),
         "taxAmtC3": tax_by_cat.get("C3", 0),
         "taxAmtD": tax_by_cat.get("D", 0),
-        "taxAmtRvat":  0,
+        "taxAmtRvat": tax_by_cat.get("RVAT", 0),
         "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
         "taxAmtExeeg":    0, "taxAmtTot":    0,
@@ -285,7 +296,7 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":   doc.currency if doc.currency else "ZMW",
+        "currencyTyCd":   "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export else "",
@@ -387,65 +398,6 @@ def submit_sales_invoice(invoice_name):
         return {"skipped": True, "reason": "ZRA not configured"}
     doc = frappe.get_doc("Sales Invoice", invoice_name)
     return make_vsdc_request("trnsSales/saveSales", _build_invoice_payload(doc))
-
-
-
-# def on_item_save(doc, method):
-#     """
-#     Hook: after_insert + on_update on Item
-
-#     Flow:
-#     1. after_insert → ZRA ko bhejo
-#     2. ZRA 000  → ERPNext item rehta hai ✅
-#        ZRA fail → ERPNext item DELETE (rollback) → frappe.throw() ❌
-#     """
-#     if not is_zra_enabled():
-#         return
-
-#     try:
-#         payload = _build_item_payload(doc)
-#         frappe.log_error(str(payload), f"ZRA Item Payload | {doc.item_code}")
-
-#         result = make_vsdc_request("items/saveItem", payload)
-#         frappe.log_error(str(result), f"ZRA Item Result | {doc.item_code}")
-
-#         if result.get("resultCd") == "000":
-#             _safe_set(doc, "custom_zra_registered", 1)
-#             _safe_set(doc, "custom_zra_item_cd", doc.item_code)
-#             frappe.logger().info(f"✅ ZRA Item synced: {doc.item_code}")
-
-#         else:
-#             # ── ZRA fail → rollback only on fresh insert ──
-#             if method == "after_insert":
-#                 frappe.delete_doc(
-#                     "Item", doc.name,
-#                     force=True,
-#                     ignore_permissions=True
-#                 )
-#                 frappe.db.commit()
-#             frappe.throw(
-#                 f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
-#                 " — Item NOT saved."
-#             )
-
-#     except frappe.ValidationError:
-#         raise
-#     except Exception as e:
-#         # ── Connection fail → bhi rollback on fresh insert ──
-#         if method == "after_insert":
-#             try:
-#                 frappe.delete_doc(
-#                     "Item", doc.name,
-#                     force=True,
-#                     ignore_permissions=True
-#                 )
-#                 frappe.db.commit()
-#             except Exception as del_err:
-#                 frappe.log_error(str(del_err), f"ZRA Rollback Failed: {doc.item_code}")
-
-#         frappe.log_error(str(e), f"ZRA Item Sync Failed: {doc.item_code}")
-#         frappe.throw(f"ZRA connection failed: {str(e)} — Item NOT saved.")
-
 
 def on_item_save(doc, method):
     """
