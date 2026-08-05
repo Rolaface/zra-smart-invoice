@@ -15,14 +15,14 @@ def get_rrp_items(mfg_tpin):
                     "itemList": [
                       {
                         "itemCd": "itemCode1",
-                        "itemClsCd": "50102515",
+                        "itemClsCd": "50102517",
                         "itemTyCd": "3",
-                        "itemNm": "Item Name Example",
-                        "itemDesc": "This is\nfanta",
+                        "itemNm": "Chicken Wings",
+                        "itemDesc": "Chicken Wings",
                         "orgnNatCd": "ZM",
-                        "pkgUnitCd": "BG",
-                        "qtyUnitCd": "BX",
-                        "rrp": 123.6789,
+                        "pkgUnitCd": "BA",
+                        "qtyUnitCd": "BE",
+                        "rrp": 150,
                         "useYn": "Y",
                         "regrId": "admin",
                         "regrNm": "Admin",
@@ -31,14 +31,14 @@ def get_rrp_items(mfg_tpin):
                       },
                       {
                         "itemCd": "itemCode2",
-                        "itemClsCd": "50102515",
+                        "itemClsCd": "50102517",
                         "itemTyCd": "3",
-                        "itemNm": "frooti",
-                        "itemDesc": "This is fanta",
+                        "itemNm": "Chips",
+                        "itemDesc": "Chips",
                         "orgnNatCd": "ZM",
-                        "pkgUnitCd": "BG",
-                        "qtyUnitCd": "BX",
-                        "rrp": 123.6789,
+                        "pkgUnitCd": "BA",
+                        "qtyUnitCd": "BE",
+                        "rrp": 50,
                         "useYn": "Y",
                         "regrId": "admin",
                         "regrNm": "Admin",
@@ -232,6 +232,8 @@ def get_rrp_items(mfg_tpin):
                 item["orgnNatCd"] = frappe.get_value("Country", {"code": item.get("orgnNatCd")}, "country_name")
             if item.get("qtyUnitCd"):
                 item["qtyUnitCd"] = frappe.get_value("UOM", {"common_code": item.get("qtyUnitCd")}, "uom_name")
+            if item.get("pkgUnitCd"):
+                item["pkgUnitCd"] = frappe.get_value("Packaging Unit Of Measure", {"code": item.get("pkgUnitCd")}, "name")
 
             tax_template = get_item_tax_template("B")
             item["tax"] = tax_template if tax_template else None
