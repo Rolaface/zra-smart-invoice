@@ -11,12 +11,17 @@ def get_item_tax_template(code):
 
 def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate):
 
-    tax_base_amount = abs(round(((rrp_rate/1.16 )* flt(item.qty)), 4))
-    if rrp_rate < item.net_amount:
-        tax_base_amount = abs(round(((item.net_amount/1.16 )* flt(item.qty)), 4))
+    item_net_amt   = abs(round(float(item.net_amount or 0), 2))
+    item_vat_amt   = abs(round(item_net_amt * (tax_rate / 100), 4))
+    item_unit_price   = abs(round(item_net_amt + item_vat_amt, 2))
 
-    prc = item.net_rate
-    vat_amt   = abs(round(tax_base_amount * tax_rate / 100, 4))
+    tax_base_amount = abs(round(((rrp_rate/1.16 )* flt(item.qty)), 2))
+    vat_amt   = abs(round(tax_base_amount * (tax_rate / 100), 4))
+    if rrp_rate < item_unit_price:
+        tax_base_amount = item_net_amt
+        vat_amt = item_vat_amt
+
+    prc = abs(round((item_net_amt+vat_amt)*qty, 2))
 
     payload =  {
             "itemSeq": item.idx,
@@ -30,7 +35,7 @@ def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
             "qty": qty,
             "rrp": rrp_rate,
             "prc": prc,
-            "splyAmt": rrp_rate * flt(item.qty) if rrp_rate >= item.net_amount else item.net_amount*qty,
+            "splyAmt": rrp_rate * flt(item.qty) if rrp_rate >= item_unit_price else prc,
             "dcRt": item.discount_percentage,
             "dcAmt": item.discount_amount,
             "isrccCd": "",
@@ -43,6 +48,6 @@ def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
             "exciseTaxblAmt": 0.0,
             "vatAmt": vat_amt,
             "exciseTxAmt": 0.0,
-            "totAmt": item.net_amount*qty
+            "totAmt": prc
         }
     return payload, vat_amt, tax_base_amount

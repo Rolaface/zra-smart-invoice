@@ -135,7 +135,7 @@ def _build_invoice_payload(doc):
 
     zra_vat_cd = []
     for item in doc.items:
-        qty     = abs(round(float(item.qty or 0), 4))
+        qty     = abs(round(float(item.qty or 0), 2))
         item_doc = frappe.get_doc("Item", item.item_code)
         tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
         if tax_rate is None:
@@ -265,7 +265,7 @@ def _build_invoice_payload(doc):
         "taxblAmtC2":     taxbl_by_cat.get("C2", 0),
         "taxblAmtC3":     taxbl_by_cat.get("C3", 0),
         "taxblAmtD":      taxbl_by_cat.get("D", 0), 
-        "taxblAmtRvat":  0,
+        "taxblAmtRvat":  taxbl_by_cat.get("RVAT", 0),
         "taxblAmtE":      0, 
         "taxblAmtF":     0,
         "taxblAmtIpl1":   0, "taxblAmtIpl2":  0,
@@ -284,7 +284,7 @@ def _build_invoice_payload(doc):
         "taxAmtC2": tax_by_cat.get("C2", 0),
         "taxAmtC3": tax_by_cat.get("C3", 0),
         "taxAmtD": tax_by_cat.get("D", 0),
-        "taxAmtRvat":  0,
+        "taxAmtRvat": tax_by_cat.get("RVAT", 0),
         "taxAmtE":        0, "taxAmtF":      0, "taxAmtIpl1":  0,
         "taxAmtIpl2":     0, "taxAmtTl":     0, "taxAmtEcm":   0,
         "taxAmtExeeg":    0, "taxAmtTot":    0,
@@ -296,7 +296,7 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":   doc.currency if doc.currency else "ZMW",
+        "currencyTyCd":   "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export else "",
