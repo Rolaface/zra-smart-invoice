@@ -11,17 +11,17 @@ def get_item_tax_template(code):
 
 def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate):
 
-    item_net_amt   = abs(round(float(item.net_amount or 0), 2))
+    item_net_amt   = abs(round(float(item.net_rate or 0), 2))
     item_vat_amt   = abs(round(item_net_amt * (tax_rate / 100), 4))
-    item_unit_price   = abs(round(item_net_amt + item_vat_amt, 2))
+    item_unit_price   = abs(round(item_net_amt + item_vat_amt, 1))
 
-    tax_base_amount = abs(round(((rrp_rate/1.16 )* flt(item.qty)), 2))
+    tax_base_amount = abs(round((rrp_rate/1.16 ), 2))
     vat_amt   = abs(round(tax_base_amount * (tax_rate / 100), 4))
     if rrp_rate < item_unit_price:
         tax_base_amount = item_net_amt
         vat_amt = item_vat_amt
 
-    prc = abs(round((item_net_amt+vat_amt)*qty, 2))
+    totAmt = abs(round((item_net_amt+vat_amt)*qty, 2))
 
     payload =  {
             "itemSeq": item.idx,
@@ -34,8 +34,8 @@ def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
             "qtyUnitCd": frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
             "qty": qty,
             "rrp": rrp_rate,
-            "prc": prc,
-            "splyAmt": rrp_rate * flt(item.qty) if rrp_rate >= item_unit_price else prc,
+            "prc": abs(round(item_net_amt+vat_amt, 1)),
+            "splyAmt": rrp_rate * flt(item.qty) if rrp_rate >= item_unit_price else totAmt,
             "dcRt": item.discount_percentage,
             "dcAmt": item.discount_amount,
             "isrccCd": "",
@@ -44,10 +44,10 @@ def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
             "isrcAmt": 0.0,
             "vatCatCd": vat_cat_cd.strip(),
             "exciseTxCatCd": None,
-            "vatTaxblAmt": tax_base_amount,
+            "vatTaxblAmt": tax_base_amount*flt(item.qty),
             "exciseTaxblAmt": 0.0,
-            "vatAmt": vat_amt,
+            "vatAmt": vat_amt*flt(item.qty),
             "exciseTxAmt": 0.0,
-            "totAmt": prc
+            "totAmt": totAmt
         }
-    return payload, vat_amt, tax_base_amount
+    return payload, vat_amt*flt(item.qty), tax_base_amount*flt(item.qty)
