@@ -9,6 +9,7 @@ from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
 from zra_smart_invoice.utils import _zra_user_id
 from custom_api.utils.response import send_response, send_response_list
+from .imported_items_pi import create_purchase_invoices_for_imports
 
 
 def _format_import_item(item: Dict[str, Any], user_id: str) -> Dict[str, Any]:
@@ -72,7 +73,6 @@ def get_import_items(
 
         items = response.get("data", {}).get("itemList", [])
 
-        # Search
         if search:
             search = search.lower()
             items = [
@@ -138,8 +138,9 @@ def get_import_items(
 def update_import_items(
     task_cd: str, dcl_de: str, import_item_list: Union[str, List[Dict[str, Any]]]
 ) -> Dict[str, Any]:
-    if not is_zra_enabled():
-        frappe.throw("ZRA integration is not configured for this site.")
+
+    # if not is_zra_enabled():
+    #     frappe.throw("ZRA integration is not configured for this site.")
 
     if not task_cd or not dcl_de:
         frappe.throw("Task Code (task_cd) and Declaration Date (dcl_de) are required.")
@@ -151,22 +152,26 @@ def update_import_items(
         if not isinstance(import_item_list, list) or len(import_item_list) == 0:
             frappe.throw("import_item_list must be a non-empty list of items.")
 
-        config = get_zra_config()
-        user_id = _zra_user_id()
+        # config = get_zra_config()
+        user_id = 1
+        # config = get_zra_config()
+        # user_id = _zra_user_id()
 
         formatted_items = [
             _format_import_item(item, user_id) for item in import_item_list
         ]
 
         payload = {
-            "tpin": config.get("tpin"),
-            "bhfId": config.get("bhf_id"),
+            # "tpin": config.get("tpin"),
+            # "bhfId": config.get("bhf_id"),
             "taskCd": str(task_cd).strip(),
             "dclDe": str(dcl_de).strip(),
             "importItemList": formatted_items,
         }
 
-        return make_vsdc_request("imports/updateImportItems", payload)
+        # TEMP: Sandbox stub
+        frappe.logger().info("Skipping ZRA update_import_items call (sandbox)")
+        return {"resultCd": "000", "resultMsg": "OK (Sandbox Stub)", "data": payload}
 
     except frappe.exceptions.ValidationError:
         raise
@@ -176,12 +181,6 @@ def update_import_items(
             message=frappe.get_traceback(),
         )
         frappe.throw(f"An unexpected error occurred while syncing with ZRA: {str(e)}")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Transactional Processing Workflow
-# ═══════════════════════════════════════════════════════════════════
-
 
 @frappe.whitelist()
 def process_imported_declarations(**kwargs) -> Dict[str, Any]:
@@ -204,16 +203,14 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
         if not task_cd or not dcl_de or not items:
             frappe.throw("Missing required fields: taskCd, dclDe, or importItemList")
 
-        # 1. Create Stock Entry (Which internally triggers the ZRA Stock API)
-        _create_stock_entry(items)
+        # _create_stock_entry(items)
 
-        # 2. Call ZRA Import API (Acknowledge Declaration)
         zra_response = update_import_items(task_cd, dcl_de, items)
 
-        # 3. Create Audit Logs (One row per item mapped to the flat schema)
+        created_pis = create_purchase_invoices_for_imports(items, dcl_no, dcl_de)
+
         _create_import_logs(data, items, status_label="Processed")
 
-        # 4. Commit Transaction ONLY if everything above succeeded
         frappe.db.commit()
 
         return {
@@ -223,7 +220,6 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        # Rollback EVERYTHING (Stock Entry, local DB changes, etc)
         frappe.db.rollback()
 
         task_cd_log = (
@@ -236,25 +232,19 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
         frappe.throw(f"Processing failed: {str(e)}")
 
 
-# ─── HELPER METHODS ────────────────────────────────────────────────────────
-
-
 def _get_default_warehouse():
+    """Fetches a default target warehouse if not explicitly provided by the UI."""
     default_warehouse = frappe.db.get_single_value(
         "Stock Settings", "default_warehouse"
     )
     if not default_warehouse:
         frappe.throw(
-            "No Default Warehouse set in Stock Settings. Please provide a target warehouse per item."
+            "No Default Warehouse set in Stock Settings. Please provide a target warehouse."
         )
     return default_warehouse
 
 
 def _create_stock_entry(items: List[Dict[str, Any]]):
-    """
-    Generates a Material Receipt Stock Entry for approved items,
-    then triggers the external ZRA Stock API sync.
-    """
     stock_entry_items = []
 
     for item in items:
@@ -263,14 +253,13 @@ def _create_stock_entry(items: List[Dict[str, Any]]):
             if not frappe.db.exists("Item", item_code):
                 frappe.throw(f"Mapped ERP Item '{item_code}' does not exist.")
 
-            # Fetch per-item warehouse, fallback to system default
             target_warehouse = item.get("target_warehouse") or _get_default_warehouse()
 
             stock_entry_items.append(
                 {
                     "item_code": item_code,
                     "qty": flt(item.get("qty", 0)),
-                    # "uom": item.get("qtyUnitCd", "Nos"),
+                    # "uom": item.get("qtyUnitCd"),
                     "t_warehouse": target_warehouse,
                 }
             )
@@ -289,31 +278,6 @@ def _create_stock_entry(items: List[Dict[str, Any]]):
 
     se.insert(ignore_permissions=True)
     se.submit()
-
-    # _sync_stock_with_zra(se)
-
-
-def _sync_stock_with_zra(stock_entry):
-    if not is_zra_enabled():
-        return
-
-    config = get_zra_config()
-
-    zra_stock_payload = {
-        "tpin": config.get("tpin"),
-        "bhfId": config.get("bhf_id"),
-        "regrNm": _zra_user_id(),
-        "regrId": _zra_user_id(),
-        "itemList": [],
-    }
-
-    for item in stock_entry.items:
-        zra_stock_payload["itemList"].append(
-            {"itemCd": item.item_code, "rsnCd": "04", "inQty": item.qty}
-        )
-
-    make_vsdc_request("inventory/saveStockIO", zra_stock_payload)
-
 
 def _create_import_logs(
     payload: Dict[str, Any], items: List[Dict[str, Any]], status_label: str
@@ -359,6 +323,7 @@ def _create_import_logs(
                 "status": human_status,
                 "status_code": status_code,
                 "mapped_erp_item": item.get("mapped_erp_item"),
+                "mapped_erp_supplier": item.get("mapped_erp_supplier"),
                 "remarks": item.get("remark"),
                 "checker": frappe.session.user,
                 "checked_at": now(),
