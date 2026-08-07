@@ -124,6 +124,7 @@ def _build_invoice_payload(doc):
 
     # ✅ Auto Detect
     is_export = (doc.tax_category == "Export")
+    is_lpo = (doc.tax_category == "LPO")
     is_return = doc.is_return
     is_debit  = getattr(doc, "is_debit_note", False)
 
@@ -301,7 +302,7 @@ def _build_invoice_payload(doc):
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export else "",
-        "lpoNumber":       doc.po_no if doc.po_no else None,
+        "lpoNumber": doc.po_no if is_lpo and doc.po_no else None,
 
         "saleCtyCd":      "1",
 
