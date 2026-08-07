@@ -8,6 +8,7 @@ import json
 from custom_api.config import zra_exception
 from collections import defaultdict
 from frappe.utils import cint, flt
+from frappe import _
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -311,6 +312,14 @@ def _build_invoice_payload(doc):
 
         "itemList": items,
     }
+    if doc.custom_details and doc.custom_details[0].invoice_type == "RVAT":
+        customer_doc = frappe.get_doc("Customer", doc.customer)
+        principle_id = customer_doc.custom_extended_details[0].principal_id if customer_doc.custom_extended_details else None
+        if not principle_id:
+            frappe.throw(
+                _("Principal ID is required for RVAT invoices. Please configure the Principal ID in the customer's Details.")
+            )
+        payload["principalId"] = principle_id
 
     return payload
 
