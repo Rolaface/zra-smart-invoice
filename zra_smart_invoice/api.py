@@ -10,20 +10,6 @@ from collections import defaultdict
 from frappe.utils import cint, flt
 from frappe import _
 
-
-# ═══════════════════════════════════════════════════════════════════
-#  PHASE 1 — Testing with pure defaults (no custom fields required)
-#
-#  [STANDARD]  = ERPNext built-in field
-#  [DEFAULT]   = hardcoded safe default
-#  TODO        = will be replaced by custom field in Phase 2
-# ═══════════════════════════════════════════════════════════════════
-
-
-# ───────────────────────────────────────────────────────────────────
-# HELPER — safely set a field on doc (skip if column not yet created)
-# ───────────────────────────────────────────────────────────────────
-
 def get_item_type_code(item_group: str) -> str:
    
     return ITEM_TYPE_CODE_MAP.get(item_group, "2")
@@ -49,9 +35,7 @@ def _zra_user_id(max_len=20):
     if "@" in user:
         user = user.split("@")[0]
     return user[:max_len]
-# ───────────────────────────────────────────────────────────────────
-# HELPER — Item payload
-# ───────────────────────────────────────────────────────────────────
+
 
 def _build_item_payload(doc):
     
@@ -463,6 +447,9 @@ def _build_sales_stock_items_payload(doc):
     items = []
     total_taxable = total_tax = total_amt = 0
 
+    is_return = getattr(doc, "is_return", 0)
+    sar_type = "03" if is_return else "11"
+
     UOM_MAP = {
         "Nos": "U",
         "Acre": "U",
@@ -526,7 +513,7 @@ def _build_sales_stock_items_payload(doc):
                 "vatCatCd": "A",
                 "taxAmt": tax_amt,
                 "totAmt": sply_amt,
-                "totDcAmt": flt(item.discount_amount or 0),
+                "totDcAmt": abs(flt(item.discount_amount or 0)),
                 "bcd": "",
             }
         )
@@ -539,13 +526,13 @@ def _build_sales_stock_items_payload(doc):
         "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",
-        "sarTyCd": "11",
+        "sarTyCd": sar_type,
         "ocrnDt": frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
         "totItemCnt": len(items),
         "totTaxblAmt": round(total_taxable, 4),
         "totTaxAmt": round(total_tax, 4),
         "totAmt": round(total_amt, 2),
-        "remark": doc.remarks or "Auto-sync stock out from sales",
+        "remark": doc.remarks or f"Auto-sync stock {'in from return' if is_return else 'out from sales'}",
         "regrId": user_id,
         "regrNm": user_id,
         "modrId": user_id,
