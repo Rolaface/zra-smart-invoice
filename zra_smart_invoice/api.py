@@ -458,56 +458,247 @@ def on_item_save(doc, method):
         frappe.throw(f"ZRA connection failed: {str(e)} — Item NOT saved.")
 
 
-def on_sales_invoice_submit(doc, method):
 
+def _build_sales_stock_items_payload(doc):
+    items = []
+    total_taxable = total_tax = total_amt = 0
+
+    UOM_MAP = {
+        "Nos": "U",
+        "Acre": "U",
+        "Kg": "KG",
+        "Ltr": "LT",
+        "Meter": "MT",
+        "Box": "BX",
+        "Bag": "BA",
+        "Each": "EA",
+    }
+    PKG_UNIT_MAP = {
+        "Box": "BX",
+        "Bag": "BA",
+        "Bottle": "BT",
+        "Each": "EA",
+        "": "BX",
+    }
+
+    for idx, item in enumerate(doc.items, start=1):
+        item_doc = frappe.get_doc("Item", item.item_code)
+
+        item_class_code = (
+            item_doc.custom_item_metadata[0].hsn_code
+            if item_doc.custom_item_metadata
+            else "43322555"
+        )
+
+        raw_pkg_unit = (
+            item_doc.custom_item_metadata[0].packaging_uom
+            if item_doc.custom_item_metadata
+            else "BX"
+        )
+        pkg_unit_cd = PKG_UNIT_MAP.get(raw_pkg_unit, "BX")
+
+        raw_uom = frappe.get_value("UOM", item.stock_uom, "common_code") or "U"
+        qty_unit_cd = UOM_MAP.get(raw_uom, raw_uom)
+
+        qty = abs(flt(item.qty or 0))
+        prc = abs(flt(item.rate or item.price_list_rate or 0))
+        sply_amt = round(qty * prc, 2)
+        taxable_amt = round(sply_amt / 1.16, 4)
+        tax_amt = round(sply_amt - taxable_amt, 4)
+
+        total_taxable += taxable_amt
+        total_tax += tax_amt
+        total_amt += sply_amt
+
+        items.append(
+            {
+                "itemSeq": idx,
+                "itemCd": item.item_code,
+                "itemClsCd": item_class_code,
+                "itemNm": item.item_name,
+                "pkgUnitCd": pkg_unit_cd,
+                "pkg": qty,
+                "qtyUnitCd": qty_unit_cd,
+                "qty": qty,
+                "prc": prc,
+                "splyAmt": sply_amt,
+                "taxblAmt": taxable_amt,
+                "vatCatCd": "A",
+                "taxAmt": tax_amt,
+                "totAmt": sply_amt,
+                "totDcAmt": flt(item.discount_amount or 0),
+                "bcd": "",
+            }
+        )
+
+    config = get_zra_config()
+    user_id = _zra_user_id()
+    return {
+        "tpin": config.get("tpin"),
+        "bhfId": config.get("bhf_id"),
+        "sarNo": _get_next_sar_no(),
+        "orgSarNo": 0,
+        "regTyCd": "M",
+        "sarTyCd": "11",
+        "ocrnDt": frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
+        "totItemCnt": len(items),
+        "totTaxblAmt": round(total_taxable, 4),
+        "totTaxAmt": round(total_tax, 4),
+        "totAmt": round(total_amt, 2),
+        "remark": doc.remarks or "Auto-sync stock out from sales",
+        "regrId": user_id,
+        "regrNm": user_id,
+        "modrId": user_id,
+        "modrNm": user_id,
+        "itemList": items,
+    }
+
+
+def _build_sales_stock_master_payload(doc):
+    stock_item_list = []
+    for item in doc.items:
+        current_qty = (
+            frappe.db.get_value(
+                "Bin",
+                {"item_code": item.item_code, "warehouse": item.warehouse},
+                "actual_qty",
+            )
+            or 0
+        )
+
+        qty_to_deduct = flt(item.stock_qty) if item.stock_qty else flt(item.qty)
+        remaining_qty = flt(current_qty) - qty_to_deduct
+
+        if remaining_qty < 0:
+            remaining_qty = 0.0
+
+        stock_item_list.append(
+            {"itemCd": item.item_code, "rsdQty": flt(remaining_qty, 4)}
+        )
+
+    config = get_zra_config()
+    user_id = _zra_user_id()
+    return {
+        "tpin": config.get("tpin"),
+        "bhfId": config.get("bhf_id"),
+        "regrId": user_id,
+        "regrNm": user_id,
+        "modrId": user_id,
+        "modrNm": user_id,
+        "stockItemList": stock_item_list,
+    }
+
+
+def on_sales_invoice_submit(doc, method):
     if not is_zra_enabled():
         return
 
+    result = {}
+
     try:
         payload = _build_invoice_payload(doc)
-        print(payload)
-        # ✅ SAFETY CHECK
         if not payload:
             frappe.throw("ZRA Payload generation failed")
 
         frappe.log_error(str(payload), f"ZRA Invoice Payload | {doc.name}")
-        print(doc.custom_details[0].barcode_data)
         result = make_vsdc_request("trnsSales/saveSales", payload)
 
-        # ✅ SAFETY CHECK
         if not result or not isinstance(result, dict):
             frappe.throw(f"Invalid ZRA response: {result}")
 
         frappe.log_error(str(result), f"ZRA Invoice Result | {doc.name}")
 
-        if result.get("resultCd") in [838, 894]:
-            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc, result=result)
+        if result.get("resultCd") == "924":
+            frappe.throw(
+                "ZRA Error 924: CIS Invoice number already exists. This draft was successfully saved to ZRA during a previous attempt that failed locally. Please cancel this draft, duplicate it to generate a new invoice number, and submit again."
+            )
 
-        elif result.get("resultCd") == "000":
+        if result.get("resultCd") in [838, 894]:
+            raise zra_exception.ZRAConnectionError(
+                "ZRA Network Error.", doc=doc, result=result
+            )
+
+        if result.get("resultCd") == "000":
             zra_data = result.get("data") or {}
 
             _safe_set(doc, "custom_zra_submitted", 1)
             _safe_set(doc, "custom_zra_result_code", result.get("resultCd"))
             _safe_set(doc, "custom_zra_result_msg", result.get("resultMsg"))
             _safe_set(doc, "custom_zra_rcpt_no", zra_data.get("rcptNo"))
-            print(zra_data)
+
+            if doc.custom_details:
+                doc.custom_details[0].barcode_data = zra_data.get("qrCodeUrl", "")
+                doc.custom_details[0].zra_response = zra_data
+
             frappe.logger().info(
-                f"✅ ZRA Invoice submitted | RcptNo: {zra_data.get('rcptNo')} | {doc.name}"
+                f"ZRA Invoice submitted | RcptNo: {zra_data.get('rcptNo')} | {doc.name}"
             )
-            doc.custom_details[0].barcode_data = zra_data.get("qrCodeUrl", "")
-            doc.custom_details[0].zra_response = zra_data
+            try:
+                stock_items_payload = _build_sales_stock_items_payload(doc)
+                print(json.dumps(stock_items_payload, indent=4))
+                stock_items_result = make_vsdc_request(
+                    "stock/saveStockItems", stock_items_payload
+                )
+
+                if stock_items_result.get("resultCd") != "000":
+                    frappe.msgprint(
+                        f"ZRA Stock Items Sync Failed: {stock_items_result.get('resultMsg')}. The invoice was submitted successfully, but stock needs manual sync.",
+                        indicator="orange",
+                    )
+                    frappe.log_error(
+                        str(stock_items_result),
+                        f"ZRA Stock Items Sync Error | {doc.name}",
+                    )
+                else:
+                    stock_master_payload = _build_sales_stock_master_payload(doc)
+                    print(json.dumps(stock_master_payload, indent=4))
+                    stock_master_result = make_vsdc_request(
+                        "stockMaster/saveStockMaster", stock_master_payload
+                    )
+
+                    if stock_master_result.get("resultCd") != "000":
+                        frappe.msgprint(
+                            f"ZRA Stock Master Sync Failed: {stock_master_result.get('resultMsg')}. The invoice was submitted, but stock master needs manual sync.",
+                            indicator="orange",
+                        )
+                        frappe.log_error(
+                            str(stock_master_result),
+                            f"ZRA Stock Master Sync Error | {doc.name}",
+                        )
+                    else:
+                        frappe.logger().info(
+                            f"ZRA Stock movements & master updated successfully for {doc.name}"
+                        )
+
+            except Exception as stock_err:
+                frappe.msgprint(
+                    f"ZRA Stock Sync Error: {str(stock_err)}. Invoice submitted to ZRA, but local stock sync encountered a code error.",
+                    indicator="orange",
+                )
+                frappe.log_error(
+                    frappe.get_traceback(), f"ZRA Stock Sync Exception | {doc.name}"
+                )
+
         else:
-            raise zra_exception.ZRAResponseError(result.get("resultMsg"), doc = doc, result = result)
+            raise zra_exception.ZRAResponseError(
+                result.get("resultMsg"), doc=doc, result=result
+            )
 
     except zra_exception.ZRAConnectionError as e:
-        raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc, result=result)
-    
+        raise zra_exception.ZRAConnectionError(
+            "ZRA Network Error.", doc=doc, result=result
+        )
+
     except zra_exception.ZRAResponseError as e:
         raise e
 
     except Exception as e:
-        frappe.log_error(str(e), f"ZRA Invoice Submit Failed: {doc.name}")
+        frappe.log_error(
+            frappe.get_traceback(), f"ZRA Invoice Submit Failed: {doc.name}"
+        )
         frappe.throw(f"ZRA connection failed: {str(e)}")
+
+
 
 
 def on_sales_invoice_cancel(doc, method):
@@ -671,7 +862,7 @@ def _build_purchase_payload(doc):
         "orgInvcNo":    None,
 
         # Supplier info
-        "spplrTpin":    "doc.tax_id if doc.tax_id else None",
+        "spplrTpin":    doc.tax_id if doc.tax_id else None,
         "spplrBhfId":   None,
         "spplrNm":      doc.supplier_name,
         "spplrInvcNo":  doc.bill_no or None,
@@ -800,43 +991,246 @@ def _build_stock_master_payload(doc):
 # Purchase Invoice Hooks
 # ═══════════════════════════════════════════════════════════════════
 
+
+def _build_purchase_stock_items_payload(doc):
+    items = []
+    total_taxable = total_tax = total_amt = 0
+
+    UOM_MAP = {
+        "Nos": "U",
+        "Acre": "U",
+        "Kg": "KG",
+        "Ltr": "LT",
+        "Meter": "MT",
+        "Box": "BX",
+        "Bag": "BA",
+        "Each": "EA",
+    }
+    PKG_UNIT_MAP = {
+        "Box": "BX",
+        "Bag": "BA",
+        "Bottle": "BT",
+        "Each": "EA",
+        "": "BX",
+    }
+
+    for idx, item in enumerate(doc.items, start=1):
+        item_doc = frappe.get_doc("Item", item.item_code)
+
+        item_class_code = (
+            item_doc.custom_item_metadata[0].hsn_code
+            if item_doc.custom_item_metadata
+            else "43322555"
+        )
+
+        raw_pkg_unit = (
+            item_doc.custom_item_metadata[0].packaging_uom
+            if item_doc.custom_item_metadata
+            else "BX"
+        )
+        pkg_unit_cd = PKG_UNIT_MAP.get(raw_pkg_unit, "BX")
+
+        raw_uom = frappe.get_value("UOM", item.stock_uom, "common_code") or "U"
+        qty_unit_cd = UOM_MAP.get(raw_uom, raw_uom)
+
+        qty = abs(flt(item.qty or 0))
+        prc = abs(flt(item.rate or item.base_rate or 0))
+
+        tax_rate = (
+            frappe.get_value(
+                "Item Tax Template Detail",
+                {"parent": item.item_tax_template, "parenttype": "Item Tax Template"},
+                "tax_rate",
+            )
+            or 16.0
+        )
+        vat_cat_cd = (
+            item.item_tax_template.split("|")[0].strip()
+            if item.item_tax_template
+            else "A"
+        )
+
+        net_amt = (
+            abs(round(item.net_amount, 2))
+            if item.net_amount
+            else round((qty * prc) / (1 + (tax_rate / 100)), 2)
+        )
+        vat_amt = round(net_amt * (tax_rate / 100), 4)
+        tot_item_amt = round(net_amt + vat_amt, 2)
+
+        total_taxable += net_amt
+        total_tax += vat_amt
+        total_amt += tot_item_amt
+
+        items.append(
+            {
+                "itemSeq": idx,
+                "itemCd": item.item_code,
+                "itemClsCd": item_class_code,
+                "itemNm": item.item_name,
+                "pkgUnitCd": pkg_unit_cd,
+                "pkg": qty,
+                "qtyUnitCd": qty_unit_cd,
+                "qty": qty,
+                "prc": prc,
+                "splyAmt": tot_item_amt,
+                "taxblAmt": net_amt,
+                "vatCatCd": vat_cat_cd,
+                "taxAmt": vat_amt,
+                "totAmt": tot_item_amt,
+                "totDcAmt": flt(item.discount_amount or 0),
+                "bcd": "",
+            }
+        )
+
+    config = get_zra_config()
+    user_id = _zra_user_id()
+    return {
+        "tpin": config.get("tpin"),
+        "bhfId": config.get("bhf_id"),
+        "sarNo": _get_next_sar_no(),
+        "orgSarNo": 0,
+        "regTyCd": "M",
+        "sarTyCd": "02",
+        "ocrnDt": frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
+        "totItemCnt": len(items),
+        "totTaxblAmt": round(total_taxable, 4),
+        "totTaxAmt": round(total_tax, 4),
+        "totAmt": round(total_amt, 2),
+        "remark": doc.remarks or "Auto-sync stock in from purchase",
+        "regrId": user_id,
+        "regrNm": user_id,
+        "modrId": user_id,
+        "modrNm": user_id,
+        "itemList": items,
+    }
+
+
+def _build_purchase_stock_master_payload(doc):
+    stock_item_list = []
+    for item in doc.items:
+        current_qty = frappe.db.get_value(
+            "Bin", 
+            {"item_code": item.item_code, "warehouse": item.warehouse}, 
+            "actual_qty"
+        ) or 0
+        
+        qty_to_add = flt(item.stock_qty) if item.stock_qty else flt(item.qty)
+        remaining_qty = flt(current_qty) + qty_to_add
+
+        stock_item_list.append({
+            "itemCd": item.item_code, 
+            "rsdQty": flt(remaining_qty, 4)
+        })
+
+    config = get_zra_config()
+    user_id = _zra_user_id()
+    return {
+        "tpin": config.get("tpin"), "bhfId": config.get("bhf_id"),
+        "regrId": user_id, "regrNm": user_id, "modrId": user_id, "modrNm": user_id,
+        "stockItemList": stock_item_list
+    }
+
+
 def on_purchase_invoice_submit(doc, method):
-    """
-    Hook: before_submit on Purchase Invoice
-    ZRA 000  → ERPNext submits ✅
-    ZRA fail → frappe.throw() → ERPNext does NOT submit ❌
-    """
     if not is_zra_enabled():
         return
+
+    result = {}
+
     try:
         payload = _build_purchase_payload(doc)
+        if not payload:
+            frappe.throw("ZRA Payload generation failed")
 
-        result  = make_vsdc_request("trnsPurchase/savePurchase", payload)
+        frappe.log_error(str(payload), f"ZRA Purchase Payload | {doc.name}")
+        result = make_vsdc_request("trnsPurchase/savePurchase", payload)
+
+        if not result or not isinstance(result, dict):
+            frappe.throw(f"Invalid ZRA response: {result}")
+
+        frappe.log_error(str(result), f"ZRA Purchase Result | {doc.name}")
+
         if result.get("resultCd") in [838, 894]:
-            raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc, result=result)
+            raise zra_exception.ZRAConnectionError(
+                "ZRA Network Error.", doc=doc, result=result
+            )
 
         if result.get("resultCd") == "000":
-            _safe_set(doc, "custom_zra_submitted",   1)
+            _safe_set(doc, "custom_zra_submitted", 1)
             _safe_set(doc, "custom_zra_result_code", result.get("resultCd"))
-            _safe_set(doc, "custom_zra_result_msg",  result.get("resultMsg"))
-            doc.custom_invoice_metadata[0].zra_response = result
-            frappe.logger().info(f"✅ ZRA Purchase submitted | {doc.name}")
+            _safe_set(doc, "custom_zra_result_msg", result.get("resultMsg"))
+
+            if doc.custom_invoice_metadata:
+                doc.custom_invoice_metadata[0].zra_response = result
+
+            frappe.logger().info(f"ZRA Purchase submitted | {doc.name}")
+            try:
+                stock_items_payload = _build_purchase_stock_items_payload(doc)
+                print(json.dumps(stock_items_payload, indent=4))
+                stock_items_result = make_vsdc_request(
+                    "stock/saveStockItems", stock_items_payload
+                )
+
+                if stock_items_result.get("resultCd") != "000":
+                    frappe.msgprint(
+                        f"ZRA Stock Items Sync Failed: {stock_items_result.get('resultMsg')}. The purchase was submitted successfully, but stock needs manual sync.",
+                        indicator="orange",
+                    )
+                    frappe.log_error(
+                        str(stock_items_result),
+                        f"ZRA Purchase Stock Items Sync Error | {doc.name}",
+                    )
+                else:
+                    stock_master_payload = _build_purchase_stock_master_payload(doc)
+                    print(json.dumps(stock_master_payload, indent=4))
+                    stock_master_result = make_vsdc_request(
+                        "stockMaster/saveStockMaster", stock_master_payload
+                    )
+
+                    if stock_master_result.get("resultCd") != "000":
+                        frappe.msgprint(
+                            f"ZRA Stock Master Sync Failed: {stock_master_result.get('resultMsg')}. The purchase was submitted, but stock master needs manual sync.",
+                            indicator="orange",
+                        )
+                        frappe.log_error(
+                            str(stock_master_result),
+                            f"ZRA Purchase Stock Master Sync Error | {doc.name}",
+                        )
+                    else:
+                        frappe.logger().info(
+                            f"ZRA Purchase stock movements & master updated successfully for {doc.name}"
+                        )
+
+            except Exception as stock_err:
+                frappe.msgprint(
+                    f"ZRA Stock Sync Error: {str(stock_err)}. Purchase submitted to ZRA, but local stock sync encountered a code error.",
+                    indicator="orange",
+                )
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"ZRA Purchase Stock Sync Exception | {doc.name}",
+                )
 
         else:
-           raise zra_exception.ZRAResponseError(result.get("resultMsg"), doc = doc, result = result)
+            raise zra_exception.ZRAResponseError(
+                result.get("resultMsg"), doc=doc, result=result
+            )
 
     except zra_exception.ZRAConnectionError as e:
-        raise zra_exception.ZRAConnectionError("ZRA Network Error.",doc=doc)
+        raise zra_exception.ZRAConnectionError(
+            "ZRA Network Error.", doc=doc, result=result
+        )
 
-    except frappe.ValidationError:
-        raise
-    
     except zra_exception.ZRAResponseError as e:
         raise e
 
     except Exception as e:
-        frappe.log_error(str(e), f"ZRA Purchase Submit Failed: {doc.name}")
-        frappe.throw(f"ZRA connection failed: {str(e)} — Purchase NOT submitted.")
+        frappe.log_error(
+            frappe.get_traceback(), f"ZRA Purchase Submit Failed: {doc.name}"
+        )
+        frappe.throw(f"ZRA connection failed: {str(e)}")
+
 
 
 def on_purchase_invoice_cancel(doc, method):
