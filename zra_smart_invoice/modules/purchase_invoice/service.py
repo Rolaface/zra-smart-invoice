@@ -22,9 +22,15 @@ def make_pi_from_purcahse_sale(payload):
                                          if extended_details
                                          else None
                                         )
+        supplier_payment_terms = None
+        due_date = None
+        try:
+            supplier_payment_terms = frappe.db.get_value("Supplier", supplier_doc.name, "payment_terms")
+        except:
+            frappe.log("Suppplier Payment Terms Template None not found")
+        if supplier_payment_terms:
+            due_date = format(get_due_date_from_template(supplier_payment_terms, format(getdate(frappe.utils.now_datetime())), format(getdate(frappe.utils.now_datetime()))))
 
-        supplier_payment_terms = frappe.db.get_value("Supplier", supplier_doc.name, "payment_terms")
-        due_date = format(get_due_date_from_template(supplier_payment_terms, format(getdate(frappe.utils.now_datetime())), format(getdate(frappe.utils.now_datetime()))))
         pi_doc = frappe.get_doc({
                         "doctype": "Purchase Invoice",
                         "posting_date": getdate(frappe.utils.now_datetime()),
