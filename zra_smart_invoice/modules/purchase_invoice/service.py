@@ -7,6 +7,7 @@ from frappe.utils import getdate
 
 def make_pi_from_purcahse_sale(payload):
     try:
+        frappe.log_error(f"Supplier Tpin = {payload.get("spplrTpin")}")
         supplier_doc = frappe.get_doc("Supplier", {"tax_id": payload.get("spplrTpin")})
         company = frappe.defaults.get_user_default("Company")
         currency = supplier_doc.default_currency
