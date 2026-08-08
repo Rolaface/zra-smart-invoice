@@ -1,5 +1,5 @@
-from apps.zra_smart_invoice.zra_smart_invoice.modules.purchase_invoice.service import make_pi_from_purcahse_sale
-from apps.zra_smart_invoice.zra_smart_invoice.modules.purchase_invoice.utils import create_purchase_sales_response
+from zra_smart_invoice.modules.purchase_invoice.service import make_pi_from_purcahse_sale
+from zra_smart_invoice.modules.purchase_invoice.utils import create_purchase_sales_response
 from zra_smart_invoice.client import make_vsdc_request
 import frappe
 from frappe import _
