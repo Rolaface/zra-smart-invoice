@@ -584,6 +584,8 @@ def on_sales_invoice_submit(doc, method):
 
     try:
         payload = _build_invoice_payload(doc)
+        print(json.dumps(payload, indent=4))
+
         if not payload:
             frappe.throw("ZRA Payload generation failed")
 
@@ -594,7 +596,7 @@ def on_sales_invoice_submit(doc, method):
             frappe.throw(f"Invalid ZRA response: {result}")
 
         frappe.log_error(str(result), f"ZRA Invoice Result | {doc.name}")
-
+        print(json.dumps(result, indent=4))
         if result.get("resultCd") == "924":
             frappe.throw(
                 "ZRA Error 924: CIS Invoice number already exists. This draft was successfully saved to ZRA during a previous attempt that failed locally. Please cancel this draft, duplicate it to generate a new invoice number, and submit again."
@@ -620,51 +622,57 @@ def on_sales_invoice_submit(doc, method):
             frappe.logger().info(
                 f"ZRA Invoice submitted | RcptNo: {zra_data.get('rcptNo')} | {doc.name}"
             )
-            try:
-                stock_items_payload = _build_sales_stock_items_payload(doc)
-                print(json.dumps(stock_items_payload, indent=4))
-                stock_items_result = make_vsdc_request(
-                    "stock/saveStockItems", stock_items_payload
-                )
+            invoice_type = doc.custom_details[0].invoice_type if doc.custom_details else None
 
-                if stock_items_result.get("resultCd") != "000":
-                    frappe.msgprint(
-                        f"ZRA Stock Items Sync Failed: {stock_items_result.get('resultMsg')}. The invoice was submitted successfully, but stock needs manual sync.",
-                        indicator="orange",
-                    )
-                    frappe.log_error(
-                        str(stock_items_result),
-                        f"ZRA Stock Items Sync Error | {doc.name}",
-                    )
-                else:
-                    stock_master_payload = _build_sales_stock_master_payload(doc)
-                    print(json.dumps(stock_master_payload, indent=4))
-                    stock_master_result = make_vsdc_request(
-                        "stockMaster/saveStockMaster", stock_master_payload
+            if invoice_type in ["Service", "RVAT"]:
+                frappe.logger().info(f"Skipping ZRA Stock Sync for Service and Rvat Invoice: {doc.name}")
+                print(f"Skipping ZRA Stock Sync for Service and Rvat Invoice: {doc.name}")
+            else:
+                try:
+                    stock_items_payload = _build_sales_stock_items_payload(doc)
+                    print(json.dumps(stock_items_payload, indent=4))
+                    stock_items_result = make_vsdc_request(
+                        "stock/saveStockItems", stock_items_payload
                     )
 
-                    if stock_master_result.get("resultCd") != "000":
+                    if stock_items_result.get("resultCd") != "000":
                         frappe.msgprint(
-                            f"ZRA Stock Master Sync Failed: {stock_master_result.get('resultMsg')}. The invoice was submitted, but stock master needs manual sync.",
+                            f"ZRA Stock Items Sync Failed: {stock_items_result.get('resultMsg')}. The invoice was submitted successfully, but stock needs manual sync.",
                             indicator="orange",
                         )
                         frappe.log_error(
-                            str(stock_master_result),
-                            f"ZRA Stock Master Sync Error | {doc.name}",
+                            str(stock_items_result),
+                            f"ZRA Stock Items Sync Error | {doc.name}",
                         )
                     else:
-                        frappe.logger().info(
-                            f"ZRA Stock movements & master updated successfully for {doc.name}"
+                        stock_master_payload = _build_sales_stock_master_payload(doc)
+                        print(json.dumps(stock_master_payload, indent=4))
+                        stock_master_result = make_vsdc_request(
+                            "stockMaster/saveStockMaster", stock_master_payload
                         )
 
-            except Exception as stock_err:
-                frappe.msgprint(
-                    f"ZRA Stock Sync Error: {str(stock_err)}. Invoice submitted to ZRA, but local stock sync encountered a code error.",
-                    indicator="orange",
-                )
-                frappe.log_error(
-                    frappe.get_traceback(), f"ZRA Stock Sync Exception | {doc.name}"
-                )
+                        if stock_master_result.get("resultCd") != "000":
+                            frappe.msgprint(
+                                f"ZRA Stock Master Sync Failed: {stock_master_result.get('resultMsg')}. The invoice was submitted, but stock master needs manual sync.",
+                                indicator="orange",
+                            )
+                            frappe.log_error(
+                                str(stock_master_result),
+                                f"ZRA Stock Master Sync Error | {doc.name}",
+                            )
+                        else:
+                            frappe.logger().info(
+                                f"ZRA Stock movements & master updated successfully for {doc.name}"
+                            )
+
+                except Exception as stock_err:
+                    frappe.msgprint(
+                        f"ZRA Stock Sync Error: {str(stock_err)}. Invoice submitted to ZRA, but local stock sync encountered a code error.",
+                        indicator="orange",
+                    )
+                    frappe.log_error(
+                        frappe.get_traceback(), f"ZRA Stock Sync Exception | {doc.name}"
+                    )
 
         else:
             raise zra_exception.ZRAResponseError(
@@ -1127,6 +1135,7 @@ def on_purchase_invoice_submit(doc, method):
 
     try:
         payload = _build_purchase_payload(doc)
+        print(json.dumps(payload, indent=4))
         if not payload:
             frappe.throw("ZRA Payload generation failed")
 
@@ -1142,7 +1151,7 @@ def on_purchase_invoice_submit(doc, method):
             raise zra_exception.ZRAConnectionError(
                 "ZRA Network Error.", doc=doc, result=result
             )
-
+        print(json.dumps(result, indent=4))
         if result.get("resultCd") == "000":
             _safe_set(doc, "custom_zra_submitted", 1)
             _safe_set(doc, "custom_zra_result_code", result.get("resultCd"))
@@ -1152,52 +1161,58 @@ def on_purchase_invoice_submit(doc, method):
                 doc.custom_invoice_metadata[0].zra_response = result
 
             frappe.logger().info(f"ZRA Purchase submitted | {doc.name}")
-            try:
-                stock_items_payload = _build_purchase_stock_items_payload(doc)
-                print(json.dumps(stock_items_payload, indent=4))
-                stock_items_result = make_vsdc_request(
-                    "stock/saveStockItems", stock_items_payload
-                )
-
-                if stock_items_result.get("resultCd") != "000":
-                    frappe.msgprint(
-                        f"ZRA Stock Items Sync Failed: {stock_items_result.get('resultMsg')}. The purchase was submitted successfully, but stock needs manual sync.",
-                        indicator="orange",
-                    )
-                    frappe.log_error(
-                        str(stock_items_result),
-                        f"ZRA Purchase Stock Items Sync Error | {doc.name}",
-                    )
-                else:
-                    stock_master_payload = _build_purchase_stock_master_payload(doc)
-                    print(json.dumps(stock_master_payload, indent=4))
-                    stock_master_result = make_vsdc_request(
-                        "stockMaster/saveStockMaster", stock_master_payload
+            invoice_type = doc.custom_invoice_metadata[0].invoice_type if doc.custom_invoice_metadata else None
+            
+            if invoice_type in ["Service", "RVAT"]:
+                frappe.logger().info(f"Skipping ZRA Stock Sync for Service Invoice: {doc.name}")
+                print(f"Skipping ZRA Stock Sync for Service Invoice: {doc.name}")
+            else:
+                try:
+                    stock_items_payload = _build_purchase_stock_items_payload(doc)
+                    print(json.dumps(stock_items_payload, indent=4))
+                    stock_items_result = make_vsdc_request(
+                        "stock/saveStockItems", stock_items_payload
                     )
 
-                    if stock_master_result.get("resultCd") != "000":
+                    if stock_items_result.get("resultCd") != "000":
                         frappe.msgprint(
-                            f"ZRA Stock Master Sync Failed: {stock_master_result.get('resultMsg')}. The purchase was submitted, but stock master needs manual sync.",
+                            f"ZRA Stock Items Sync Failed: {stock_items_result.get('resultMsg')}. The purchase was submitted successfully, but stock needs manual sync.",
                             indicator="orange",
                         )
                         frappe.log_error(
-                            str(stock_master_result),
-                            f"ZRA Purchase Stock Master Sync Error | {doc.name}",
+                            str(stock_items_result),
+                            f"ZRA Purchase Stock Items Sync Error | {doc.name}",
                         )
                     else:
-                        frappe.logger().info(
-                            f"ZRA Purchase stock movements & master updated successfully for {doc.name}"
+                        stock_master_payload = _build_purchase_stock_master_payload(doc)
+                        print(json.dumps(stock_master_payload, indent=4))
+                        stock_master_result = make_vsdc_request(
+                            "stockMaster/saveStockMaster", stock_master_payload
                         )
 
-            except Exception as stock_err:
-                frappe.msgprint(
-                    f"ZRA Stock Sync Error: {str(stock_err)}. Purchase submitted to ZRA, but local stock sync encountered a code error.",
-                    indicator="orange",
-                )
-                frappe.log_error(
-                    frappe.get_traceback(),
-                    f"ZRA Purchase Stock Sync Exception | {doc.name}",
-                )
+                        if stock_master_result.get("resultCd") != "000":
+                            frappe.msgprint(
+                                f"ZRA Stock Master Sync Failed: {stock_master_result.get('resultMsg')}. The purchase was submitted, but stock master needs manual sync.",
+                                indicator="orange",
+                            )
+                            frappe.log_error(
+                                str(stock_master_result),
+                                f"ZRA Purchase Stock Master Sync Error | {doc.name}",
+                            )
+                        else:
+                            frappe.logger().info(
+                                f"ZRA Purchase stock movements & master updated successfully for {doc.name}"
+                            )
+
+                except Exception as stock_err:
+                    frappe.msgprint(
+                        f"ZRA Stock Sync Error: {str(stock_err)}. Purchase submitted to ZRA, but local stock sync encountered a code error.",
+                        indicator="orange",
+                    )
+                    frappe.log_error(
+                        frappe.get_traceback(),
+                        f"ZRA Purchase Stock Sync Exception | {doc.name}",
+                    )
 
         else:
             raise zra_exception.ZRAResponseError(
