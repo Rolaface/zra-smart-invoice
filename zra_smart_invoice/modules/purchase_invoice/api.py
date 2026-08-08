@@ -1,11 +1,11 @@
-from zra_smart_invoice.modules.mtv.utils import get_item_tax_template
-from zra_smart_invoice.api import get_item_type_name
+from apps.zra_smart_invoice.zra_smart_invoice.modules.purchase_invoice.service import make_pi_from_purcahse_sale
+from apps.zra_smart_invoice.zra_smart_invoice.modules.purchase_invoice.utils import create_purchase_sales_response
 from zra_smart_invoice.client import make_vsdc_request
 import frappe
 from frappe import _
-from custom_api.utils.response import send_old_response, send_response_list
+from custom_api.utils.response import send_old_response
 
-@frappe.whitelist(allow_guest = True, methods=["GET"])
+@frappe.whitelist(allow_guest = False, methods=["GET"])
 def get_purchase_sales():
     try:
         payload = {"lastReqDt":"20231215000000"}
@@ -20,24 +20,28 @@ def get_purchase_sales():
     except Exception as e:
         raise e
 
-@frappe.whitelist(allow_guest = True, methods=["POST"])
+@frappe.whitelist(allow_guest = False, methods=["POST"])
 def save_purchase_sales():
     try:
-        data = frappe.request.get_json()
-        payload = data
-        return send_response_list(
-                    status="success",
-                    message="Purchase Invoices saved successfully",
-                    data=None,
-                    status_code=200,
-                    http_status=200
-                )
-        # result = make_vsdc_request("trnsPurchase/saveTrnsPurchaseSales", payload)
-        # if result.get("resultCd") and result.get("resultCd") == "000":
-        #     return result
+        payload = frappe.request.get_json()
 
-        # else:
-        #     frappe.throw(_("Failed to save purchase sales to ZRA"))  
-          
+        if payload.get("transaction_progress") == "Rejected":
+            new_payload = create_purchase_sales_response(payload)
+            result = make_vsdc_request("trnsPurchase/savePurchase", new_payload)
+
+            if result.get("resultCd") and result.get("resultCd") == "000":
+                return send_old_response(
+                            status="success",
+                            message="Purchase Invoices saved successfully",
+                            data=None,
+                            status_code=200,
+                            http_status=200
+                        )
+            else:
+                frappe.throw(_("Failed to save purchase sales to ZRA"))
+
+        else:
+            response = make_pi_from_purcahse_sale(payload)
+
     except Exception as e:
         raise e

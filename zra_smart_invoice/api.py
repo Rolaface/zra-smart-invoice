@@ -1126,7 +1126,25 @@ def on_purchase_invoice_submit(doc, method):
     result = {}
 
     try:
-        payload = _build_purchase_payload(doc)
+        payload = None
+        is_automatic_invoice = False
+        if doc.custom_invoice_metadata:
+            invoice_metadata = doc.custom_invoice_metadata
+            if invoice_metadata and invoice_metadata[0]:
+                if invoice_metadata[0].get("purchase_sales_response"):
+                    payload = invoice_metadata[0].get("purchase_sales_response")
+                    if isinstance(payload, str):
+                        payload = json.loads(payload)
+                        if payload.get("pchsSttsCd") == "02":
+                            payload["cisInvcNo"] = doc.name
+                            is_automatic_invoice = True
+                    elif isinstance(payload, dict):
+                        if payload.get("pchsSttsCd") == "02":
+                            payload["cisInvcNo"] = doc.name
+                            is_automatic_invoice = True
+
+        if not is_automatic_invoice:
+            payload = _build_purchase_payload(doc)
         if not payload:
             frappe.throw("ZRA Payload generation failed")
 
