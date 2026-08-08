@@ -285,7 +285,7 @@ def _build_invoice_payload(doc):
         "currencyTyCd":   "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
-        "destnCountryCd":  customer_country_code if is_export else "",
+        "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else "",
         "lpoNumber": doc.po_no if is_lpo and doc.po_no else None,
 
         "saleCtyCd":      "1",
@@ -298,13 +298,28 @@ def _build_invoice_payload(doc):
         "itemList": items,
     }
     if doc.custom_details and doc.custom_details[0].invoice_type == "RVAT":
-        customer_doc = frappe.get_doc("Customer", doc.customer)
-        principle_id = customer_doc.custom_extended_details[0].principal_id if customer_doc.custom_extended_details else None
-        if not principle_id:
+        principal_details = doc.custom_details[0].zra_principal_detail
+
+        if isinstance(principal_details, str):
+            try:
+                principal_details = frappe.parse_json(principal_details)
+            except Exception:
+                frappe.throw(_("Invalid ZRA Principal Details configured."))
+
+        if not principal_details or not isinstance(principal_details, dict):
             frappe.throw(
-                _("Principal ID is required for RVAT invoices. Please configure the Principal ID in the customer's Details.")
+                _("ZRA Principal Details are required for RVAT invoices. "
+                "Please configure the Principal Details.")
             )
-        payload["principalId"] = principle_id
+
+        principal_id = principal_details.get("id")
+        if not principal_id:
+            frappe.throw(
+                _("Principal ID is required for RVAT invoices. "
+                "Please configure the Principal ID in the ZRA Principal Details.")
+            )
+
+        payload["principalId"] = principal_id
 
     return payload
 
