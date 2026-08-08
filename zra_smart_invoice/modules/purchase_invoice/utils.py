@@ -39,6 +39,7 @@ def create_purchase_sales_response(payload):
     else:
         payload["pchsSttsCd"] = "02"
 
+    payload["totTaxblAmt"] = abs(round(payload["totTaxblAmt"],2))
     payload["pchsTyCd"] = "N"
     payload["cfmDt"] = now_dt.strftime("%Y%m%d%H%M%S")
     payload["pchsDt"] = now_dt.strftime("%Y%m%d")
