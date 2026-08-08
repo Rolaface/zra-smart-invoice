@@ -1,4 +1,4 @@
-from apps.zra_smart_invoice.zra_smart_invoice.modules.purchase_invoice.utils import build_purchase_sales_items, create_purchase_sales_response
+from zra_smart_invoice.modules.purchase_invoice.utils import build_purchase_sales_items, create_purchase_sales_response
 from custom_api.api.selling.sales_invoice.utils import validate_receivable_account_for_currency
 from custom_api.utils.response import send_old_response
 from erpnext.accounts.party import get_due_date_from_template
