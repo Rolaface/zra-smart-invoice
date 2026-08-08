@@ -1,5 +1,5 @@
-from apps.zra_smart_invoice.zra_smart_invoice.api import _zra_user_id
-from apps.zra_smart_invoice.zra_smart_invoice.modules.mtv.utils import get_item_tax_template
+from zra_smart_invoice.api import _zra_user_id
+from zra_smart_invoice.modules.mtv.utils import get_item_tax_template
 import frappe
 
 def build_purchase_sales_items(items):
