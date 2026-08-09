@@ -38,6 +38,7 @@ def _zra_user_id(max_len=20):
 
 
 def _build_item_payload(doc):
+    data = frappe.request.get_json()
     
     if len(doc.taxes) > 1:
         frappe.throw(f"Multiple tax templates not supported for Item {doc.name}, ZRA requires only one tax template per item.")
@@ -75,7 +76,7 @@ def _build_item_payload(doc):
         "qtyUnitCd":     frappe.get_value("UOM", doc.stock_uom, "common_code"),
 
         # ── Pricing ───────────────────────────────────────────────
-        "dftPrc":        doc.standard_rate or 0,  # [STANDARD]
+        "dftPrc":        data.get("sellingPrice") if data else 0,
 
         # ── Origin & flags ────────────────────────────────────────
         "orgnNatCd":     orgn_nat_cd,
