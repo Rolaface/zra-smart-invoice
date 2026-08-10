@@ -217,8 +217,12 @@ def _build_invoice_payload(doc):
             sales_invoice_doc = frappe.get_doc("Sales Invoice", doc.return_against)
             posting_date = sales_invoice_doc.posting_date
             zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
-    print(type(taxbl_by_cat))
-    print(taxbl_by_cat.get("A"))
+
+    discount_amount = 0
+    if doc.additional_discount_percentage:
+        discount_amount = abs(round(grand_total*(doc.additional_discount_percentage/100),4))
+        grand_total = grand_total-discount_amount
+
     payload = {
         # ✅ Auto detect
         "orgInvcNo":      zra_response.get("rcptNo") if (doc.is_return == 1 or is_debit) and zra_response else 0,
@@ -246,8 +250,8 @@ def _build_invoice_payload(doc):
 
         "dbtRsnCd":       reason_code if is_debit else "",
         "invcAdjustReason": reason_code_name if is_debit else "",
-        "cashDcRt":       0,
-        "cashDcAmt":      0,
+        "cashDcRt":       doc.additional_discount_percentage,
+        "cashDcAmt":      discount_amount,
 
 
         # ✅ Auto — Export C1, Normal A
@@ -290,7 +294,7 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":   "ZMW",
+        "currencyTyCd":   doc.currency if doc.currency else "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else "",
