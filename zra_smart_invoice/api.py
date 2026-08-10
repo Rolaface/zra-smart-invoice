@@ -140,10 +140,11 @@ def _build_invoice_payload(doc):
                 taxbl_by_cat[vat_cat_cd.strip()] += net_amt
                 tax_by_cat[vat_cat_cd.strip()]   += vat_amt
         else:
-            net_amt   = abs(round(float(item.net_amount or 0), 2))
-            vat_amt   = abs(round(net_amt * tax_rate / 100, 4))
-            tot_amt   = abs(round(net_amt + vat_amt, 2))
-            prc     = abs(round(tot_amt / qty, 2))
+            net_amt   = abs(round(float(item.net_rate or 0), 2))
+            vat_amt   = abs(round(net_amt * (tax_rate / 100), 4))
+            prc   = abs(round(net_amt + vat_amt, 2))
+            tot_amt = abs(round(prc*qty, 2))
+            vatTaxblAmt = abs(round(net_amt*flt(item.qty),4))
             zra_vat_cd.append(vat_cat_cd.strip())
             items.append({
                 "itemSeq": item.idx,
@@ -164,7 +165,7 @@ def _build_invoice_payload(doc):
                 "isrcAmt": 0.0,
                 "vatCatCd": vat_cat_cd.strip(),
                 "exciseTxCatCd": None,
-                "vatTaxblAmt": net_amt,
+                "vatTaxblAmt": vatTaxblAmt,
                 "exciseTaxblAmt": 0.0,
                 "tlTaxblAmt": 0.0,
                 "iplTaxblAmt": 0.0,
@@ -183,12 +184,6 @@ def _build_invoice_payload(doc):
     net_total   = round(sum(i["vatTaxblAmt"] for i in items), 2)
     tax_amt     = round(sum(i["vatAmt"]      for i in items), 2)
     grand_total = round(sum(i["totAmt"]      for i in items), 2)
-
-    # ZRA strict validation
-    # if round(net_total + tax_amt, 2) != grand_total:
-    #     raise ValueError(
-    #         f"ZRA Mismatch → taxable({net_total}) + tax({tax_amt}) != total({grand_total})"
-    #     )
 
     now_dt = frappe.utils.now_datetime()
     if not doc.custom_details or not doc.custom_details[0].payment_mode:
@@ -225,7 +220,7 @@ def _build_invoice_payload(doc):
         "custNm":         doc.customer_name,
 
         "salesTyCd":      "N",
-        "rcptTyCd":       rcpt_type,          # ✅ Auto S/R/D
+        "rcptTyCd":       rcpt_type,
         "pmtTyCd":         PAYMENT_TYPE_CODE_MAP.get(
                                                         doc.custom_details[0].payment_mode
                                                     ) if doc.custom_details else None,
