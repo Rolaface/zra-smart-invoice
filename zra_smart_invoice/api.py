@@ -198,6 +198,7 @@ def _build_invoice_payload(doc):
     reason_code = None
     reason_code_name = None
     description = None
+    posting_date = doc.posting_date
     zra_response = {}
     
     if doc.is_return == 1 or is_debit:
@@ -211,6 +212,7 @@ def _build_invoice_payload(doc):
 
         if doc.return_against:
             sales_invoice_doc = frappe.get_doc("Sales Invoice", doc.return_against)
+            posting_date = sales_invoice_doc.posting_date
             zra_response = json.loads(sales_invoice_doc.custom_details[0].zra_response) if sales_invoice_doc.custom_details and sales_invoice_doc.custom_details[0].zra_response else {}
     print(type(taxbl_by_cat))
     print(taxbl_by_cat.get("A"))
@@ -230,7 +232,7 @@ def _build_invoice_payload(doc):
         "salesSttsCd":    "02",
 
         "cfmDt":          now_dt.strftime("%Y%m%d%H%M%S"),
-        "salesDt":        frappe.utils.getdate(doc.posting_date).strftime("%Y%m%d"),
+        "salesDt":        frappe.utils.getdate(posting_date).strftime("%Y%m%d"),
         "stockRlsDt":     None,
         "cnclReqDt":      now_dt.strftime("%Y%m%d%H%M%S") if doc.is_return == 1 else None,
         "cnclDt":         now_dt.strftime("%Y%m%d%H%M%S") if doc.is_return == 1 else None,
@@ -285,7 +287,7 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":   "ZMW",
+        "currencyTyCd":   doc.currency if doc.currency else "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else "",
