@@ -148,9 +148,9 @@ def _build_invoice_payload(doc):
             zra_vat_cd.append(vat_cat_cd.strip())
             discounted_net_price = None
             discount_amount = 0
-            if item.discount_amount:
-                discount_amount = abs(round(tot_amt*(item.discount_percentage/100),2))
-                discounted_net_price = abs(round(tot_amt-discount_amount, 2))
+            if item.discount_amount or item.discount_percentage:
+                discount_amount = abs(round(tot_amt*(item.discount_percentage/100),4))
+                discounted_net_price = abs(round(tot_amt-discount_amount, 4))
                 vatTaxblAmt = abs(round(discounted_net_price/(1+(tax_rate/100)),4))
                 vat_amt = abs(round(discounted_net_price-vatTaxblAmt,4))
 

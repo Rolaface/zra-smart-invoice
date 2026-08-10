@@ -11,11 +11,13 @@ def get_item_tax_template(code):
 
 def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate):
 
+    #@TODO Discount is not Calculated for MTV Item need t calculate that
+
     item_net_amt   = abs(round(float(item.net_rate or 0), 2))
     item_vat_amt   = abs(round(item_net_amt * (tax_rate / 100), 4))
     item_unit_price   = abs(round(item_net_amt + item_vat_amt, 1))
 
-    tax_base_amount = abs(round((rrp_rate/1.16 ), 2))
+    tax_base_amount = abs(round((rrp_rate/ (1 + tax_rate / 100) ), 2))
     vat_amt   = abs(round(tax_base_amount * (tax_rate / 100), 4))
     if rrp_rate < item_unit_price:
         tax_base_amount = item_net_amt
