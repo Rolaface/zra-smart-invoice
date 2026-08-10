@@ -140,12 +140,20 @@ def _build_invoice_payload(doc):
                 taxbl_by_cat[vat_cat_cd.strip()] += net_amt
                 tax_by_cat[vat_cat_cd.strip()]   += vat_amt
         else:
-            net_amt   = abs(round(float(item.net_rate or 0), 2))
+            net_amt   = abs(round(float(item.price_list_rate or 0), 2))
             vat_amt   = abs(round(net_amt * (tax_rate / 100), 4))
             prc   = abs(round(net_amt + vat_amt, 2))
             tot_amt = abs(round(prc*qty, 2))
             vatTaxblAmt = abs(round(net_amt*flt(item.qty),4))
             zra_vat_cd.append(vat_cat_cd.strip())
+            discounted_net_price = None
+            discount_amount = 0
+            if item.discount_amount:
+                discount_amount = abs(round(tot_amt*(item.discount_percentage/100),2))
+                discounted_net_price = abs(round(tot_amt-discount_amount, 2))
+                vatTaxblAmt = abs(round(discounted_net_price/(1+(tax_rate/100)),4))
+                vat_amt = abs(round(discounted_net_price-vatTaxblAmt,4))
+
             items.append({
                 "itemSeq": item.idx,
                 "itemCd": item.item_code,
@@ -159,7 +167,7 @@ def _build_invoice_payload(doc):
                 "prc": prc,
                 "splyAmt": tot_amt,
                 "dcRt": item.discount_percentage,
-                "dcAmt": item.discount_amount,
+                "dcAmt": discount_amount,
                 "isrccCd": "",
                 "isrccNm": "",
                 "isrcAmt": 0.0,
@@ -173,9 +181,9 @@ def _build_invoice_payload(doc):
                 "tlAmt": 0.0,
                 "vatAmt": vat_amt,
                 "exciseTxAmt": 0.0,
-                "totAmt": tot_amt
+                "totAmt": tot_amt if not item.discount_amount else discounted_net_price
             })
-            taxbl_by_cat[vat_cat_cd.strip()] += net_amt
+            taxbl_by_cat[vat_cat_cd.strip()] += vatTaxblAmt 
             tax_by_cat[vat_cat_cd.strip()]   += vat_amt
 
     taxbl_by_cat = {k: round(v, 2) for k, v in taxbl_by_cat.items()}
@@ -282,7 +290,7 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":   doc.currency if doc.currency else "ZMW",
+        "currencyTyCd":   "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else "",
