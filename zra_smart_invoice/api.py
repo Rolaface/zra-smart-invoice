@@ -831,10 +831,18 @@ def _build_purchase_payload(doc):
         qty         = round(float(item.qty  or 0), 4)        
         
         item_doc = frappe.get_doc("Item", item.item_code)
-        net_amt   = round(item.net_amount, 2)
-        vat_amt   = round(net_amt * tax_rate / 100, 2)
-        tot_amt   = round(net_amt + vat_amt, 2)
-        prc       = round(tot_amt / qty, 2)
+        net_amt   = abs(round(float(item.price_list_rate or 0), 2))
+        vat_amt   = abs(round(net_amt * (tax_rate / 100), 4))
+        prc   = abs(round(net_amt + vat_amt, 2))
+        tot_amt = abs(round(prc*qty, 2))
+        vatTaxblAmt = abs(round(net_amt*flt(item.qty),4))
+
+        discount_amount = 0
+        if item.discount_amount or item.discount_percentage:
+            discount_amount = abs(round(tot_amt*(item.discount_percentage/100),4))
+            discounted_net_price = abs(round(tot_amt-discount_amount, 4))
+            vatTaxblAmt = abs(round(discounted_net_price/(1+(tax_rate/100)),4))
+            vat_amt = abs(round(discounted_net_price-vatTaxblAmt,4))
 
         items.append({
             "itemSeq":         item.idx,
@@ -855,10 +863,10 @@ def _build_purchase_payload(doc):
             "prc":             prc,
             "splyAmt":         tot_amt,
             "dcRt":            item.discount_percentage,
-            "dcAmt":           item.discount_amount,
+            "dcAmt":           discount_amount,
 
             "vatCatCd":        vat_cat_cd.strip(),
-            "taxblAmt":        net_amt,
+            "taxblAmt":        vatTaxblAmt,
             "taxAmt":          vat_amt,
 
             "iplCatCd":        None,
@@ -871,7 +879,7 @@ def _build_purchase_payload(doc):
             "tlAmt":           0.0,
             "exciseTxAmt":     0.0,
 
-            "totAmt":          tot_amt,
+            "totAmt":          tot_amt if not item.discount_amount else discounted_net_price,
         })
 
     net_total   = round(sum(i["taxblAmt"] for i in items), 2)
@@ -887,7 +895,7 @@ def _build_purchase_payload(doc):
         "spplrTpin":    doc.tax_id if doc.tax_id else None,
         "spplrBhfId":   None,
         "spplrNm":      doc.supplier_name,
-        "spplrInvcNo":  doc.bill_no or None,
+        "spplrInvcNo":  None,
 
         "regTyCd":      "M",
         "pchsTyCd":     "N",
