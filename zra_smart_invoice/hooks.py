@@ -43,7 +43,13 @@ doc_events = {
     },
     # ✅ Stock Entry — auto banta hai Purchase pe
     "Stock Entry": {
-        "before_submit": "zra_smart_invoice.api.on_stock_entry_submit",
+        # "before_submit": "zra_smart_invoice.api.on_stock_entry_submit",
+        # "before_submit": "zra_smart_invoice.stock.old.on_stock_transaction_submit_1",
+        "before_submit": "zra_smart_invoice.stock.zra_stock.on_stock_transaction_submit",
+    },
+    "Stock Reconciliation": {
+        # "before_submit": "zra_smart_invoice.stock.old.on_stock_transaction_submit_1"
+        "before_submit": "zra_smart_invoice.stock.zra_stock.on_stock_transaction_submit"
     },
     "Customer": {
         "validate": "zra_smart_invoice.patches.customer.before_validate_hooks.before_validate",
