@@ -299,7 +299,7 @@ def _build_invoice_payload(doc):
         "currencyTyCd":    doc.currency if doc.currency else "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
-        "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else "",
+        "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else None,
         "lpoNumber": doc.po_no if is_lpo and doc.po_no else None,
 
         "saleCtyCd":      "1",
