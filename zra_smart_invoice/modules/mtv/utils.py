@@ -37,7 +37,7 @@ def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
             "qty": qty,
             "rrp": rrp_rate,
             "prc": abs(round(item_net_amt+vat_amt, 2)),
-            "splyAmt": rrp_rate * flt(item.qty) if rrp_rate >= item_unit_price else totAmt,
+            "splyAmt": abs(round((rrp_rate * flt(item.qty),2))) if rrp_rate >= item_unit_price else totAmt,
             "dcRt": item.discount_percentage,
             "dcAmt": item.discount_amount,
             "isrccCd": "",
