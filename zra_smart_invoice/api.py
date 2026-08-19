@@ -141,10 +141,12 @@ def _build_invoice_payload(doc):
                 tax_by_cat[vat_cat_cd.strip()]   += vat_amt
         else:
             net_amt   = abs(round(float(item.price_list_rate or 0), 2))
-            vat_amt   = abs(round(net_amt * (tax_rate / 100), 4))
-            prc   = abs(round(net_amt + vat_amt, 2))
+            vat_amt_unit = abs(round(net_amt * (tax_rate / 100), 4))
+            prc   = abs(round(net_amt + vat_amt_unit, 2))
             tot_amt = abs(round(prc*qty, 2))
             vatTaxblAmt = abs(round(net_amt*flt(item.qty),4))
+            vat_amt     = abs(round(vatTaxblAmt * (tax_rate / 100), 4))
+
             zra_vat_cd.append(vat_cat_cd.strip())
             discounted_net_price = None
             discount_amount = 0
@@ -294,7 +296,7 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":   doc.currency if doc.currency else "ZMW",
+        "currencyTyCd":    "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
         "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else "",
