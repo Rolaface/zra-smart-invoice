@@ -479,24 +479,6 @@ def _build_sales_stock_items_payload(doc):
     is_return = getattr(doc, "is_return", 0)
     sar_type = "03" if is_return else "11"
 
-    UOM_MAP = {
-        "Nos": "U",
-        "Acre": "U",
-        "Kg": "KG",
-        "Ltr": "LT",
-        "Meter": "MT",
-        "Box": "BX",
-        "Bag": "BA",
-        "Each": "EA",
-    }
-    PKG_UNIT_MAP = {
-        "Box": "BX",
-        "Bag": "BA",
-        "Bottle": "BT",
-        "Each": "EA",
-        "": "BX",
-    }
-
     for idx, item in enumerate(doc.items, start=1):
         item_doc = frappe.get_doc("Item", item.item_code)
         # if item_doc.is_stock_item == 0:
@@ -508,15 +490,9 @@ def _build_sales_stock_items_payload(doc):
             else "43322555"
         )
 
-        raw_pkg_unit = (
-            item_doc.custom_item_metadata[0].packaging_uom
-            if item_doc.custom_item_metadata
-            else "BX"
-        )
-        pkg_unit_cd = PKG_UNIT_MAP.get(raw_pkg_unit, "BX")
+        pkg_unit_cd = frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code")
 
-        raw_uom = frappe.get_value("UOM", item.stock_uom, "common_code") or "U"
-        qty_unit_cd = UOM_MAP.get(raw_uom, raw_uom)
+        qty_unit_cd = frappe.get_value("UOM", item_doc.stock_uom, "common_code")
 
         qty = abs(flt(item.qty or 0))
         prc = abs(flt(item.rate or item.price_list_rate or 0))
@@ -1029,23 +1005,6 @@ def _build_purchase_stock_items_payload(doc):
     items = []
     total_taxable = total_tax = total_amt = 0
 
-    UOM_MAP = {
-        "Nos": "U",
-        "Acre": "U",
-        "Kg": "KG",
-        "Ltr": "LT",
-        "Meter": "MT",
-        "Box": "BX",
-        "Bag": "BA",
-        "Each": "EA",
-    }
-    PKG_UNIT_MAP = {
-        "Box": "BX",
-        "Bag": "BA",
-        "Bottle": "BT",
-        "Each": "EA",
-        "": "BX",
-    }
 
     for idx, item in enumerate(doc.items, start=1):
         item_doc = frappe.get_doc("Item", item.item_code)
@@ -1058,15 +1017,8 @@ def _build_purchase_stock_items_payload(doc):
             else "43322555"
         )
 
-        raw_pkg_unit = (
-            item_doc.custom_item_metadata[0].packaging_uom
-            if item_doc.custom_item_metadata
-            else "BX"
-        )
-        pkg_unit_cd = PKG_UNIT_MAP.get(raw_pkg_unit, "BX")
-
-        raw_uom = frappe.get_value("UOM", item.stock_uom, "common_code") or "U"
-        qty_unit_cd = UOM_MAP.get(raw_uom, raw_uom)
+        pkg_unit_cd = frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code")
+        qty_unit_cd = frappe.get_value("UOM", item_doc.stock_uom, "common_code")
 
         qty = abs(flt(item.qty or 0))
         prc = abs(flt(item.rate or item.base_rate or 0))

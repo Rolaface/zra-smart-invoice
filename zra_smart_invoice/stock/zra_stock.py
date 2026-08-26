@@ -256,11 +256,11 @@ def _resolve_qty_unit_code(uom_name):
     Fetches the 'common_code' from tabUOM.
     """
     if not uom_name:
-        return "U"
+        return None
     
     zra_code = frappe.db.get_value("UOM", uom_name, "common_code")
     
-    return zra_code if zra_code else "U"
+    return zra_code if zra_code else None
 
 
 def _resolve_pkg_unit_code(pkg_uom_name):
@@ -269,8 +269,8 @@ def _resolve_pkg_unit_code(pkg_uom_name):
     Fetches the 'code' from tabPackaging Unit Of Measure.
     """
     if not pkg_uom_name:
-        return "BX"
+        return None
         
     zra_code = frappe.db.get_value("Packaging Unit Of Measure", pkg_uom_name, "code")
     
-    return zra_code if zra_code else "BX"
+    return zra_code if zra_code else None
