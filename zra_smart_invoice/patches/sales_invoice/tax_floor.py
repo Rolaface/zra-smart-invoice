@@ -55,7 +55,7 @@ def _get_rrp_floored_amount(self, item):
         self._rrp_cache[item.item_code] = _fetch_rrp(item.item_code)
 
     rrp = self._rrp_cache[item.item_code]
-    item_rate = item.rate + (item.rate*0.16)
+    item_rate = item.price_list_rate + (item.price_list_rate*0.16)
     if rrp and rrp > flt(item_rate):
         tax_base_amount = abs(round(((rrp/1.16 )* flt(item.qty)), 2))
         return tax_base_amount
