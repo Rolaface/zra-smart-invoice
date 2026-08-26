@@ -11,33 +11,51 @@ def on_stock_transaction_submit(doc, method):
 
     if not is_zra_enabled():
         return
-
-    zra_sar_type = _get_zra_sar_type(doc)
-    if not zra_sar_type:
+    if doc.flags.ignore_zra_sync:
+        print("🚀 ~ on_stock_transaction_submit ~ ignore_zra_sync:", doc.flags.ignore_zra_sync)
         return
 
     try:
-        # ── Step 1: saveStockItems (Log the movement) ───────────
-        stock_items_payload = _build_stock_items_payload(doc, zra_sar_type)
-        print("🚀 ~ on_stock_transaction_submit_1 ~ stock_items_payload:")
-        print(json.dumps(stock_items_payload, indent=4))
-        
-        if not stock_items_payload.get("itemList"):
+        payloads_to_send = []
+
+        if doc.doctype == "Stock Reconciliation":
+            pos_payload = _build_stock_items_payload(doc, "06", recon_filter="positive")
+            neg_payload = _build_stock_items_payload(doc, "16", recon_filter="negative")
+            
+            if pos_payload.get("itemList"):
+                payloads_to_send.append(pos_payload)
+            if neg_payload.get("itemList"):
+                payloads_to_send.append(neg_payload)
+        else:
+            zra_sar_type = _get_zra_sar_type(doc)
+            if not zra_sar_type:
+                return
+            
+            se_payload = _build_stock_items_payload(doc, zra_sar_type)
+            if se_payload.get("itemList"):
+                payloads_to_send.append(se_payload)
+
+        if not payloads_to_send:
             return 
             
-        stock_items_result = make_vsdc_request("stock/saveStockItems", stock_items_payload)
+        for payload in payloads_to_send:
+            print(f"🚀 ~ on_stock_transaction_submit ~ stock_items_payload (Type {payload.get('sarTyCd')}):")
+            print(json.dumps(payload, indent=4))
+            
+            stock_items_result = make_vsdc_request("stock/saveStockItems", payload)
 
-        if stock_items_result.get("resultCd") != "000":
-            frappe.throw(
-                f"ZRA Stock Items Error ({stock_items_result.get('resultCd')}): "
-                f"{stock_items_result.get('resultMsg')} — Sync Failed."
-            )
+            if stock_items_result.get("resultCd") != "000":
+                frappe.throw(
+                    f"ZRA Stock Items Error ({stock_items_result.get('resultCd')}): "
+                    f"{stock_items_result.get('resultMsg')} — Sync Failed."
+                )
+            print(f"🚀 ~ ZRA Stock Items Response: {stock_items_result}")
 
-        # ── Step 2: saveStockMaster (Update absolute balances) ───
         stock_master_payload = _build_stock_master_payload(doc)
-        stock_master_result = make_vsdc_request("stockMaster/saveStockMaster", stock_master_payload)
-        print("🚀 ~ on_stock_transaction_submit_1 ~ stock_master_payload:")
+        print("🚀 ~ on_stock_transaction_submit ~ stock_master_payload:")
         print(json.dumps(stock_master_payload, indent=4))
+
+        stock_master_result = make_vsdc_request("stockMaster/saveStockMaster", stock_master_payload)
 
         if stock_master_result.get("resultCd") != "000":
             frappe.throw(
@@ -45,8 +63,6 @@ def on_stock_transaction_submit(doc, method):
                 f"{stock_master_result.get('resultMsg')} — Sync Failed."
             )
 
-        # ── On Success: Print responses and notify user ──────────
-        print(f"🚀 ~ ZRA Stock Items Response: {stock_items_result}")
         print(f"🚀 ~ ZRA Stock Master Response: {stock_master_result}")
         print(f"✅ ZRA Stock Sync Successful | {doc.doctype}: {doc.name}")
 
@@ -64,9 +80,6 @@ def on_stock_transaction_submit(doc, method):
 
 
 def _get_zra_sar_type(doc):
-    if doc.doctype == "Stock Reconciliation":
-        return "16"  
-    
     if doc.doctype == "Stock Entry":
         mapping = {
             "Material Receipt": "01",
@@ -78,7 +91,7 @@ def _get_zra_sar_type(doc):
 
     return None
 
-def _build_stock_items_payload(doc, zra_sar_type):
+def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
     item_list = []
     total_taxable = 0
     total_tax = 0
@@ -88,12 +101,17 @@ def _build_stock_items_payload(doc, zra_sar_type):
         if doc.doctype == "Stock Reconciliation":
             current_qty = flt(item.current_qty)
             new_qty = flt(item.qty)
-            qty_change = abs(new_qty - current_qty)
+            qty_change = new_qty - current_qty
             
             if qty_change == 0:
                 continue 
                 
-            qty = qty_change
+            if recon_filter == "positive" and qty_change < 0:
+                continue
+            if recon_filter == "negative" and qty_change > 0:
+                continue
+                
+            qty = abs(qty_change)
             rate = flt(item.valuation_rate)
         else:
             qty = flt(item.transfer_qty) if hasattr(item, "transfer_qty") else flt(item.qty)
@@ -238,9 +256,8 @@ def _resolve_qty_unit_code(uom_name):
     Fetches the 'common_code' from tabUOM.
     """
     if not uom_name:
-        return "U"  # Default fallback
+        return "U"
     
-    # Query tabUOM for the common_code
     zra_code = frappe.db.get_value("UOM", uom_name, "common_code")
     
     return zra_code if zra_code else "U"
@@ -252,9 +269,8 @@ def _resolve_pkg_unit_code(pkg_uom_name):
     Fetches the 'code' from tabPackaging Unit Of Measure.
     """
     if not pkg_uom_name:
-        return "BX"  # Default fallback
+        return "BX"
         
-    # Query tabPackaging Unit Of Measure for the code
     zra_code = frappe.db.get_value("Packaging Unit Of Measure", pkg_uom_name, "code")
     
     return zra_code if zra_code else "BX"

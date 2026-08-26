@@ -499,6 +499,8 @@ def _build_sales_stock_items_payload(doc):
 
     for idx, item in enumerate(doc.items, start=1):
         item_doc = frappe.get_doc("Item", item.item_code)
+        # if item_doc.is_stock_item == 0:
+        #     return
 
         item_class_code = (
             item_doc.custom_item_metadata[0].hsn_code
@@ -614,7 +616,6 @@ def on_sales_invoice_submit(doc, method):
     try:
         payload = _build_invoice_payload(doc)
         print(json.dumps(payload, indent=4))
-
         if not payload:
             frappe.throw("ZRA Payload generation failed")
 
@@ -1048,6 +1049,8 @@ def _build_purchase_stock_items_payload(doc):
 
     for idx, item in enumerate(doc.items, start=1):
         item_doc = frappe.get_doc("Item", item.item_code)
+        # if item_doc.is_stock_item == 0:
+        #     return
 
         item_class_code = (
             item_doc.custom_item_metadata[0].hsn_code
@@ -1220,6 +1223,11 @@ def on_purchase_invoice_submit(doc, method):
             if invoice_type in ["Service", "RVAT"]:
                 frappe.logger().info(f"Skipping ZRA Stock Sync for Service Invoice: {doc.name}")
                 print(f"Skipping ZRA Stock Sync for Service Invoice: {doc.name}")
+            elif not doc.update_stock:
+                frappe.logger().info(
+                    f"Skipping ZRA Stock Sync for Purchase Invoice: "
+                    f"{doc.name} because update_stock is disabled."
+                )
             else:
                 try:
                     stock_items_payload = _build_purchase_stock_items_payload(doc)

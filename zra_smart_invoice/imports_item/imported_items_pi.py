@@ -84,7 +84,7 @@ def _create_supplier_purchase_invoice(
 
     purchase_invoice = frappe.new_doc("Purchase Invoice")
     purchase_invoice.supplier = supplier
-    purchase_invoice.update_stock = 1
+    purchase_invoice.update_stock = 0
     
     if supplier_payment_terms:
         purchase_invoice.payment_terms_template = supplier_payment_terms
