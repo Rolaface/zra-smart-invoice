@@ -471,18 +471,15 @@ def on_item_save(doc, method):
         frappe.throw(f"ZRA connection failed: {str(e)} — Item NOT saved.")
 
 
-
-def _build_sales_stock_items_payload(doc):
+def _build_sales_stock_items_payload(doc, stock_items):
     items = []
     total_taxable = total_tax = total_amt = 0
 
     is_return = getattr(doc, "is_return", 0)
     sar_type = "03" if is_return else "11"
 
-    for idx, item in enumerate(doc.items, start=1):
-        item_doc = frappe.get_doc("Item", item.item_code)
-        # if item_doc.is_stock_item == 0:
-        #     return
+    for idx, item in enumerate(stock_items, start=1):
+        item_doc = frappe.get_cached_doc("Item", item.item_code)
 
         item_class_code = (
             item_doc.custom_item_metadata[0].hsn_code
@@ -491,7 +488,6 @@ def _build_sales_stock_items_payload(doc):
         )
 
         pkg_unit_cd = frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code")
-
         qty_unit_cd = frappe.get_value("UOM", item_doc.stock_uom, "common_code")
 
         qty = abs(flt(item.qty or 0))
@@ -548,9 +544,10 @@ def _build_sales_stock_items_payload(doc):
     }
 
 
-def _build_sales_stock_master_payload(doc):
+def _build_sales_stock_master_payload(doc, stock_items):
     stock_item_list = []
-    for item in doc.items:
+    
+    for item in stock_items:
         current_qty = (
             frappe.db.get_value(
                 "Bin",
@@ -582,7 +579,6 @@ def _build_sales_stock_master_payload(doc):
         "stockItemList": stock_item_list,
     }
 
-
 def on_sales_invoice_submit(doc, method):
     if not is_zra_enabled():
         return
@@ -603,6 +599,7 @@ def on_sales_invoice_submit(doc, method):
 
         frappe.log_error(str(result), f"ZRA Invoice Result | {doc.name}")
         print(json.dumps(result, indent=4))
+        
         if result.get("resultCd") == "924":
             frappe.throw(
                 "ZRA Error 924: CIS Invoice number already exists. This draft was successfully saved to ZRA during a previous attempt that failed locally. Please cancel this draft, duplicate it to generate a new invoice number, and submit again."
@@ -633,9 +630,24 @@ def on_sales_invoice_submit(doc, method):
             if invoice_type in ["Service", "RVAT"]:
                 frappe.logger().info(f"Skipping ZRA Stock Sync for Service and Rvat Invoice: {doc.name}")
                 print(f"Skipping ZRA Stock Sync for Service and Rvat Invoice: {doc.name}")
+            elif not doc.update_stock:
+                frappe.logger().info(
+                    f"Skipping ZRA Stock Sync for Sales Invoice: "
+                    f"{doc.name} because update_stock is disabled."
+                )
             else:
                 try:
-                    stock_items_payload = _build_sales_stock_items_payload(doc)
+                    stock_items = [
+                        item for item in doc.items 
+                        if frappe.get_cached_value("Item", item.item_code, "is_stock_item")
+                    ]
+
+                    if not stock_items:
+                        frappe.logger().info(f"Skipping ZRA Stock Sync for {doc.name}: All items are non-stock/service items.")
+                        print(f"Skipping ZRA Stock Sync for {doc.name}: All items are non-stock/service items.")
+                        return
+
+                    stock_items_payload = _build_sales_stock_items_payload(doc, stock_items)
                     print(json.dumps(stock_items_payload, indent=4))
                     stock_items_result = make_vsdc_request(
                         "stock/saveStockItems", stock_items_payload
@@ -651,7 +663,7 @@ def on_sales_invoice_submit(doc, method):
                             f"ZRA Stock Items Sync Error | {doc.name}",
                         )
                     else:
-                        stock_master_payload = _build_sales_stock_master_payload(doc)
+                        stock_master_payload = _build_sales_stock_master_payload(doc, stock_items)
                         print(json.dumps(stock_master_payload, indent=4))
                         stock_master_result = make_vsdc_request(
                             "stockMaster/saveStockMaster", stock_master_payload
@@ -1001,15 +1013,13 @@ def _build_stock_master_payload(doc):
 # ═══════════════════════════════════════════════════════════════════
 
 
-def _build_purchase_stock_items_payload(doc):
+def _build_purchase_stock_items_payload(doc, stock_items):
     items = []
     total_taxable = total_tax = total_amt = 0
 
-
-    for idx, item in enumerate(doc.items, start=1):
-        item_doc = frappe.get_doc("Item", item.item_code)
-        # if item_doc.is_stock_item == 0:
-        #     return
+    for idx, item in enumerate(stock_items, start=1):
+        
+        item_doc = frappe.get_cached_doc("Item", item.item_code)
 
         item_class_code = (
             item_doc.custom_item_metadata[0].hsn_code
@@ -1093,9 +1103,10 @@ def _build_purchase_stock_items_payload(doc):
     }
 
 
-def _build_purchase_stock_master_payload(doc):
+def _build_purchase_stock_master_payload(doc, stock_items):
     stock_item_list = []
-    for item in doc.items:
+    
+    for item in stock_items:
         current_qty = frappe.db.get_value(
             "Bin", 
             {"item_code": item.item_code, "warehouse": item.warehouse}, 
@@ -1117,7 +1128,6 @@ def _build_purchase_stock_master_payload(doc):
         "regrId": user_id, "regrNm": user_id, "modrId": user_id, "modrNm": user_id,
         "stockItemList": stock_item_list
     }
-
 
 def on_purchase_invoice_submit(doc, method):
     if not is_zra_enabled():
@@ -1182,7 +1192,17 @@ def on_purchase_invoice_submit(doc, method):
                 )
             else:
                 try:
-                    stock_items_payload = _build_purchase_stock_items_payload(doc)
+                    stock_items = [
+                        item for item in doc.items 
+                        if frappe.get_cached_value("Item", item.item_code, "is_stock_item")
+                    ]
+
+                    if not stock_items:
+                        frappe.logger().info(f"Skipping ZRA Stock Sync for {doc.name}: All items are non-stock/service items.")
+                        print(f"Skipping ZRA Stock Sync for {doc.name}: All items are non-stock/service items.")
+                        return
+
+                    stock_items_payload = _build_purchase_stock_items_payload(doc, stock_items)
                     print(json.dumps(stock_items_payload, indent=4))
                     stock_items_result = make_vsdc_request(
                         "stock/saveStockItems", stock_items_payload
@@ -1198,7 +1218,7 @@ def on_purchase_invoice_submit(doc, method):
                             f"ZRA Purchase Stock Items Sync Error | {doc.name}",
                         )
                     else:
-                        stock_master_payload = _build_purchase_stock_master_payload(doc)
+                        stock_master_payload = _build_purchase_stock_master_payload(doc, stock_items)
                         print(json.dumps(stock_master_payload, indent=4))
                         stock_master_result = make_vsdc_request(
                             "stockMaster/saveStockMaster", stock_master_payload
