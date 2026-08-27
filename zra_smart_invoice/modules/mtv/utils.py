@@ -12,11 +12,11 @@ def get_item_tax_template(code):
 def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate):
 
     item_net_amt   = abs(round(float(item.price_list_rate or 0), 2))
-    item_vat_amt   = abs(round(item_net_amt * (tax_rate / 100), 4))
+    item_vat_amt   = abs(round(item_net_amt * (tax_rate / 100), 2))
     item_unit_price   = abs(round(item_net_amt + item_vat_amt, 2))
 
-    tax_base_amount = abs(round((rrp_rate/ (1 + tax_rate / 100) ), 4))
-    vat_amt   = abs(round(tax_base_amount * (tax_rate / 100), 4))
+    tax_base_amount = abs(round((rrp_rate/ (1 + tax_rate / 100) ), 2))
+    vat_amt   = abs(round(tax_base_amount * (tax_rate / 100), 2))
     if rrp_rate < item_unit_price:
         tax_base_amount = item_net_amt
         vat_amt = item_vat_amt
@@ -24,8 +24,8 @@ def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
     prc = abs(round(item_net_amt+vat_amt, 2)) 
 
     totAmt = abs(round(prc*qty, 2))
-    tax_base_amount = abs(round(tax_base_amount*flt(item.qty),4))
-    vat_amt = abs(round(vat_amt*flt(item.qty),4))
+    tax_base_amount = abs(round(tax_base_amount*flt(item.qty),2))
+    vat_amt = abs(round(vat_amt*flt(item.qty),2))
 
     splyAmt = totAmt
     if rrp_rate >= item_unit_price:
@@ -35,12 +35,12 @@ def create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
     discount_amount = 0
     if item.discount_amount or item.discount_percentage:
 
-        discount_amount = abs(round(splyAmt*(item.discount_percentage/100),4))
-        discounted_net_price = abs(round(splyAmt-discount_amount, 4))
-        tax_base_amount = abs(round(discounted_net_price/(1+(tax_rate/100)),4))
-        vat_amt = abs(round(discounted_net_price-tax_base_amount,4))
+        discount_amount = abs(round(splyAmt*(item.discount_percentage/100),2))
+        discounted_net_price = abs(round(splyAmt-discount_amount, 2))
+        tax_base_amount = abs(round(discounted_net_price/(1+(tax_rate/100)),2))
+        vat_amt = abs(round(discounted_net_price-tax_base_amount,2))
         if rrp_rate > item_unit_price:
-            discounted_net_price = abs(round(totAmt-discount_amount, 4))
+            discounted_net_price = abs(round(totAmt-discount_amount, 2))
 
     payload =  {
             "itemSeq": item.idx,

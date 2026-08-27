@@ -222,7 +222,7 @@ def _build_invoice_payload(doc):
 
     discount_amount = 0
     if doc.additional_discount_percentage:
-        discount_amount = abs(round(grand_total*(doc.additional_discount_percentage/100),4))
+        discount_amount = abs(round(grand_total*(doc.additional_discount_percentage/100),2))
         grand_total = abs(round(grand_total-discount_amount, 2))
 
     payload = {
