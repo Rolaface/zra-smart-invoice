@@ -27,7 +27,7 @@ doc_events = {
 
     "Sales Invoice": {
         # Fires when user clicks Submit — ZRA must succeed first
-        "before_submit": "zra_smart_invoice.api.on_sales_invoice_submit",
+        "on_submit": "zra_smart_invoice.api.on_sales_invoice_submit",
         # Fires when user cancels — warns but doesn't block
         "on_cancel":     "zra_smart_invoice.api.on_sales_invoice_cancel",
     },
