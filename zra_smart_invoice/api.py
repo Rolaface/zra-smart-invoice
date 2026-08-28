@@ -86,8 +86,8 @@ def _build_item_payload(doc):
         "sftyQty":       0,
         "isrcAplcbYn":   "Y" if doc.custom_item_metadata[0].insurance else "N",
         "svcChargeYn":   "Y" if doc.custom_item_metadata[0].service_charge else "N",
-        "rentalYn":      "N",
-        "useYn":         "Y",
+        "rentalYn":      "Y" if doc.custom_item_metadata[0].rentalyn else "N",
+        "useYn":         "Y" if doc.custom_item_metadata[0].useyn else "N",
 
         # MTV Item Details
         "manufacturerTpin": doc.custom_item_metadata[0].mtv_manufacturer_tpin if is_mtv_item else None,
