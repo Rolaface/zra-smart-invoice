@@ -1,3 +1,5 @@
+from zra_smart_invoice.modules.item.service import build_item_payload
+from zra_smart_invoice.utils import sanitize_zra_message
 from zra_smart_invoice.modules.mtv.utils import create_mtv_item_payload
 from zra_smart_invoice.config.constant import ITEM_TYPE_CODE_MAP, PAYMENT_TYPE_CODE_MAP
 import frappe
@@ -9,10 +11,6 @@ from custom_api.config import zra_exception
 from collections import defaultdict
 from frappe.utils import cint, flt
 from frappe import _
-
-def get_item_type_code(item_group: str) -> str:
-   
-    return ITEM_TYPE_CODE_MAP.get(item_group, "2")
 
 def get_item_type_name(item_type_code: str) -> str:
     for name, code in ITEM_TYPE_CODE_MAP.items():
@@ -36,70 +34,6 @@ def _zra_user_id(max_len=20):
         user = user.split("@")[0]
     return user[:max_len]
 
-
-def _build_item_payload(doc):
-    data = frappe.request.get_json()
-    
-    if len(doc.taxes) > 1:
-        frappe.throw(f"Multiple tax templates not supported for Item {doc.name}, ZRA requires only one tax template per item.")
-
-    tax_template = frappe.get_doc("Item Tax Template", doc.taxes[0].item_tax_template) if doc.taxes else None
-    if tax_template and len(tax_template.taxes) > 1:
-        frappe.throw(f"Multiple taxes in tax template not supported for Item {doc.name}, ZRA requires only one tax per item.")
-
-    tax_template_title = tax_template.title.split("|")[0] if tax_template else None
-    if not tax_template_title:
-        frappe.throw("Please select a valid Tax Template for the item.")
-    if doc.country_of_origin:
-        orgn_nat_cd = frappe.get_value("Country", doc.country_of_origin, "code").upper()
-    else:
-        orgn_nat_cd = frappe.get_value("Country", frappe.defaults.get_user_default("country"), "code").upper()
-
-    is_mtv_item = doc.custom_item_metadata[0].is_mtv if doc.custom_item_metadata else False
-
-    return {
-        # ── Identity ──────────────────────────────────────────────
-        "itemCd":        doc.item_code,           # [STANDARD]
-        "itemNm":        doc.item_name,           # [STANDARD]
-        "itemStdNm":     doc.item_name,           # [STANDARD]
-
-        # ── Classification ────────────────────────────────────────
-        "itemClsCd":     doc.custom_item_metadata[0].hsn_code,
-        "itemTyCd":      get_item_type_code(doc.item_group),
-        "vatCatCd":      tax_template_title.strip() if tax_template_title else None,
-        "iplCatCd":      None,                    # [DEFAULT] TODO: custom_zra_ipl_cat_cd
-        "tlCatCd":       None,                    # [DEFAULT]
-        "exciseTxCatCd": None,                    # [DEFAULT]
-
-        # ── Units ─────────────────────────────────────────────────
-        "pkgUnitCd":     frappe.get_value("Packaging Unit Of Measure", doc.custom_item_metadata[0].packaging_uom, "code"),
-        "qtyUnitCd":     frappe.get_value("UOM", doc.stock_uom, "common_code"),
-
-        # ── Pricing ───────────────────────────────────────────────
-        "dftPrc":        data.get("sellingPrice") if data else 0,
-
-        # ── Origin & flags ────────────────────────────────────────
-        "orgnNatCd":     orgn_nat_cd,
-        "btchNo":        None,
-        "bcd":           None,
-        "addInfo":       None,
-        "sftyQty":       0,
-        "isrcAplcbYn":   "Y" if doc.custom_item_metadata[0].insurance else "N",
-        "svcChargeYn":   "Y" if doc.custom_item_metadata[0].service_charge else "N",
-        "rentalYn":      "Y" if doc.custom_item_metadata[0].rentalyn else "N",
-        "useYn":         "Y" if doc.custom_item_metadata[0].useyn else "N",
-
-        # MTV Item Details
-        "manufacturerTpin": doc.custom_item_metadata[0].mtv_manufacturer_tpin if is_mtv_item else None,
-        "manufacturerItemCd": doc.custom_item_metadata[0].manufactureritemcd if is_mtv_item else None,
-        "rrp": doc.custom_item_metadata[0].rrp_rate if is_mtv_item else None,
-
-        # ── Audit ─────────────────────────────────────────────────
-        "regrId": _zra_user_id(),
-        "regrNm": _zra_user_id(),
-        "modrId": _zra_user_id(),
-        "modrNm": _zra_user_id(),
-    }
 
 def _build_invoice_payload(doc):
     """
@@ -373,7 +307,7 @@ def register_item(item_code):
     if not is_zra_enabled():
         frappe.throw("ZRA is not configured for this site.")
     doc = frappe.get_doc("Item", item_code)
-    return make_vsdc_request("items/saveItem", _build_item_payload(doc))
+    return make_vsdc_request("items/saveItem", build_item_payload(doc))
 
 
 @frappe.whitelist()
@@ -436,7 +370,7 @@ def on_item_save(doc, method):
         return
 
     try:
-        payload = _build_item_payload(doc)
+        payload = build_item_payload(doc)
 
         # ✅ Method ke hisaab se alag endpoint
         if method == "after_insert":
@@ -454,10 +388,9 @@ def on_item_save(doc, method):
 
         else:
             # ── ZRA fail → rollback only on fresh insert ──
-
+            error_message = sanitize_zra_message(result.get('resultMsg'))
             frappe.throw(
-                f"ZRA Error ({result.get('resultCd')}): {result.get('resultMsg')}"
-                " — Item NOT saved."
+                f"ZRA Error ({result.get('resultCd')}): {error_message}"
             )
 
     except frappe.ValidationError:
@@ -468,7 +401,8 @@ def on_item_save(doc, method):
             title=f"ZRA Item Sync Failed: {doc.item_code}",
             message=frappe.get_traceback()
         )
-        frappe.throw(f"ZRA connection failed: {str(e)} — Item NOT saved.")
+        error_message = sanitize_zra_message(str(e))
+        frappe.throw(f"ZRA connection failed: {error_message} — Item NOT saved.")
 
 
 def _build_sales_stock_items_payload(doc, stock_items):

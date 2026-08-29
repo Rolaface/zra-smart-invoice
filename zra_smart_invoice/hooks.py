@@ -21,8 +21,8 @@ app_license = "mit"
 
 doc_events = {
     "Item": {
-        "after_insert": "zra_smart_invoice.api.on_item_save",  # ✅
-        "on_update":    "zra_smart_invoice.api.on_item_save",  # edits ke liye
+        "after_insert": "zra_smart_invoice.api.on_item_save",
+        "on_update":    "zra_smart_invoice.api.on_item_save",
     },
 
     "Sales Invoice": {
