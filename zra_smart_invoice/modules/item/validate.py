@@ -10,25 +10,34 @@ def validate_zra_taxes(tax_templates):
         
         if tax_template_category == "VAT":
             if vat_taxes > 0:
-                frappe.throw("Only one Vat Category Tax is allowed on item")
+                frappe.throw("Multiple VAT taxes are not allowed on the same item. Please keep only one VAT tax.")
             else:
                 vat_taxes +=1
 
         elif tax_template_category == "Insurance Premium Levy":
             if insurance_premium_levy > 0:
-                frappe.throw("Only one Insurance Premium Levy Category Tax is allowed on item")
+                frappe.throw(
+                            "Multiple Insurance Premium Levy taxes are not allowed on the same item. "
+                            "Please keep only one Insurance Premium Levy tax."
+                        )            
             else:
                 insurance_premium_levy +=1
 
         elif tourism_levy == "Tourism levy":
             if tourism_levy > 0:
-                frappe.throw("Only one Tourism levy Category Tax is allowed on item")
+                frappe.throw(
+                            "Multiple Tourism Levy taxes are not allowed on the same item. "
+                            "Please keep only one Tourism Levy tax."
+                        )
             else:
                 tourism_levy +=1
 
         elif excise == "Excise":
             if excise > 0:
-                frappe.throw("Only one Excise Category Tax is allowed on item")
+                frappe.throw(
+                            "Multiple Excise taxes are not allowed on the same item. "
+                            "Please keep only one Excise tax."
+                        )
             else:
                 excise += 1
             
