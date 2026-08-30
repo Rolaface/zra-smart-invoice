@@ -128,9 +128,9 @@ def _build_invoice_payload(doc):
     tax_by_cat   = {k: round(v, 2) for k, v in tax_by_cat.items()}
 
     vatTaxblAmt   = round(sum(i["vatTaxblAmt"] for i in items), 2)
-    iplTaxblAmt   = round(sum(i["iplTaxblAmt"] for i in items), 2)
+    iplTaxblAmt   = round(sum(i.get("iplTaxblAmt", 0.0)  for i in items), 2)
     vatAmt     = round(sum(i["vatAmt"]      for i in items), 2)
-    iplAmt      = round(sum(i["iplAmt"]      for i in items), 2)
+    iplAmt      = round(sum(i.get("iplAmt",0.0)      for i in items), 2)
     grand_total = round(sum(i["totAmt"]      for i in items), 2)
 
     net_total = vatTaxblAmt + iplTaxblAmt
