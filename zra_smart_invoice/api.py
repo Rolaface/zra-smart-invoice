@@ -34,6 +34,30 @@ def _zra_user_id(max_len=20):
         user = user.split("@")[0]
     return user[:max_len]
 
+ZRA_EXCISE_RATES = {
+    "EXEEG": 3.0,
+    "ECM": 5.0,
+}
+
+
+def _get_zra_excise(taxes_template_name):
+
+    if not taxes_template_name:
+        return None, 0
+
+    template = frappe.get_doc(
+        "Sales Taxes and Charges Template",
+        taxes_template_name
+    )
+
+    title = (template.title or "").upper()
+
+    for code, rate in ZRA_EXCISE_RATES.items():
+        if code in title:
+            return code, rate
+
+    return None, 0
+
 
 def _build_invoice_payload(doc):
     """
@@ -42,6 +66,7 @@ def _build_invoice_payload(doc):
     """
 
     # ✅ Auto Detect
+    sales_taxes_and_charges = doc.taxes_and_charges
     is_export = (doc.tax_category == "Export")
     is_lpo = (doc.tax_category == "LPO")
     is_return = doc.is_return
@@ -49,15 +74,21 @@ def _build_invoice_payload(doc):
 
     rcpt_type = "R"  if is_return else ("D" if is_debit else "S")
 
+    # Resolve dynamic excise code and rate
+    excise_code, excise_rate = _get_zra_excise(sales_taxes_and_charges)
+
     items = []
 
     taxbl_by_cat = defaultdict(float)
     tax_by_cat   = defaultdict(float)
+    excise_taxbl_by_cat = defaultdict(float)
+    excise_by_cat = defaultdict(float)
 
     for item in doc.items:
-        qty     = abs(round(float(item.qty or 0), 2))
+        qty = abs(round(float(item.qty or 0), 2))
         item_doc = frappe.get_doc("Item", item.item_code)
         tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
+        
         if tax_rate is None:
             frappe.throw(f"Tax rate not found for item {item.item_code} for tax category {doc.tax_category}")
 
@@ -70,26 +101,58 @@ def _build_invoice_payload(doc):
         rrp_rate = item_doc.custom_item_metadata[0].rrp_rate if is_mtv else None
 
         if is_mtv and rrp_rate:
-                mtv_item_payload, vat_amt, net_amt = create_mtv_item_payload(item,item_doc,qty, rrp_rate, vat_cat_cd, tax_rate)
-                items.append(mtv_item_payload)
-                print(items)
-                taxbl_by_cat[vat_cat_cd.strip()] += net_amt
-                tax_by_cat[vat_cat_cd.strip()]   += vat_amt
+            mtv_item_payload, vat_amt, net_amt = create_mtv_item_payload(item, item_doc, qty, rrp_rate, vat_cat_cd, tax_rate)
+            items.append(mtv_item_payload)
+            print(items)
+            taxbl_by_cat[vat_cat_cd.strip()] += net_amt
+            tax_by_cat[vat_cat_cd.strip()]   += vat_amt
         else:
-            net_amt   = abs(round(float(item.price_list_rate or 0), 2))
-            vat_amt_unit = abs(round(net_amt * (tax_rate / 100), 4))
-            prc   = abs(round(net_amt + vat_amt_unit, 2))
-            tot_amt = abs(round(prc*qty, 2))
-            vatTaxblAmt = abs(round(net_amt*flt(item.qty),4))
-            vat_amt     = abs(round(vatTaxblAmt * (tax_rate / 100), 4))
+            net_amt = abs(round(float(item.price_list_rate or 0), 2))
+            
+            # 1. Base Taxable Amount (Quantity applied)
+            base_taxbl_amt = abs(round(net_amt * flt(item.qty), 4))
+            
+            # 2. Excise calculation
+            excise_taxbl_amt = base_taxbl_amt if excise_code else 0.0
+            excise_amt = abs(round(base_taxbl_amt * (excise_rate / 100), 4)) if excise_code else 0.0
+            
+            # 3. VAT/IPL calculation (compounded on top of excise)
+            vat_base_amt = abs(round(base_taxbl_amt + excise_amt, 4))
+            tax_amt_total = abs(round(vat_base_amt * (tax_rate / 100), 4))
+            
+            # 4. Unit price and Total amount
+            vat_amt_unit = abs(round((net_amt + (net_amt * (excise_rate / 100))) * (tax_rate / 100), 4))
+            prc = abs(round(net_amt + (net_amt * (excise_rate / 100)) + vat_amt_unit, 2))
+            tot_amt = abs(round(prc * qty, 2))
 
             discounted_net_price = None
             discount_amount = 0
             if item.discount_amount or item.discount_percentage:
-                discount_amount = abs(round(tot_amt*(item.discount_percentage/100),4))
-                discounted_net_price = abs(round(tot_amt-discount_amount, 4))
-                vatTaxblAmt = abs(round(discounted_net_price/(1+(tax_rate/100)),4))
-                vat_amt = abs(round(discounted_net_price-vatTaxblAmt,4))
+                discount_amount = abs(round(tot_amt * (item.discount_percentage / 100), 4))
+                discounted_net_price = abs(round(tot_amt - discount_amount, 4))
+                
+                # Reverse calculate base from discounted total 
+                # Formula: total = base * (1 + excise) * (1 + vat)
+                base_taxbl_amt = abs(round(
+                    discounted_net_price / (
+                        (1 + (excise_rate / 100)) * (1 + (tax_rate / 100))
+                    ), 4
+                ))
+                
+                excise_taxbl_amt = base_taxbl_amt if excise_code else 0.0
+                excise_amt = abs(round(base_taxbl_amt * (excise_rate / 100), 4)) if excise_code else 0.0
+                
+                vat_base_amt = abs(round(base_taxbl_amt + excise_amt, 4))
+                tax_amt_total = abs(round(vat_base_amt * (tax_rate / 100), 4))
+
+            # Split into VAT or IPL based on category
+            is_ipl = (tax_template_category == "Insurance Premium Levy")
+            
+            vatTaxblAmt = vat_base_amt if not is_ipl else 0.0
+            vat_amt = tax_amt_total if not is_ipl else 0.0
+            
+            iplTaxblAmt = vat_base_amt if is_ipl else 0.0
+            iplAmt = tax_amt_total if is_ipl else 0.0
 
             items.append({
                 "itemSeq": item.idx,
@@ -108,33 +171,47 @@ def _build_invoice_payload(doc):
                 "isrccCd": "",
                 "isrccNm": "",
                 "isrcAmt": 0.0,
-                "vatCatCd": vat_cat_cd.strip() if tax_template_category == "VAT" else None,
-                "iplCatCd": vat_cat_cd.strip() if tax_template_category == "Insurance Premium Levy" else None,
-                "exciseTxCatCd": None,
-                "vatTaxblAmt": vatTaxblAmt if tax_template_category == "VAT" else 0.0,
-                "exciseTaxblAmt": 0.0,
+                "vatCatCd": vat_cat_cd.strip() if not is_ipl else None,
+                "iplCatCd": vat_cat_cd.strip() if is_ipl else None,
+                "exciseTxCatCd": excise_code,
+                "vatTaxblAmt": vatTaxblAmt,
+                "exciseTaxblAmt": excise_taxbl_amt,
                 "tlTaxblAmt": 0.0,
-                "iplTaxblAmt": vatTaxblAmt if tax_template_category == "Insurance Premium Levy" else 0.0,
-                "iplAmt": vat_amt if tax_template_category == "Insurance Premium Levy" else 0.0,
+                "iplTaxblAmt": iplTaxblAmt,
+                "iplAmt": iplAmt,
                 "tlAmt": 0.0,
-                "vatAmt": vat_amt if tax_template_category == "VAT" else 0.0,
-                "exciseTxAmt": 0.0,
+                "vatAmt": vat_amt,
+                "exciseTxAmt": excise_amt,
                 "totAmt": tot_amt if not item.discount_amount else discounted_net_price
             })
-            taxbl_by_cat[vat_cat_cd.strip()] += vatTaxblAmt 
-            tax_by_cat[vat_cat_cd.strip()]   += vat_amt
+            
+            taxbl_by_cat[vat_cat_cd.strip()] += vat_base_amt 
+            tax_by_cat[vat_cat_cd.strip()]   += tax_amt_total
+            
+            if excise_code:
+                excise_taxbl_by_cat[excise_code] += excise_taxbl_amt
+                excise_by_cat[excise_code] += excise_amt
 
     taxbl_by_cat = {k: round(v, 2) for k, v in taxbl_by_cat.items()}
     tax_by_cat   = {k: round(v, 2) for k, v in tax_by_cat.items()}
+    excise_taxbl_by_cat = {k: round(v, 2) for k, v in excise_taxbl_by_cat.items()}
+    excise_by_cat = {k: round(v, 2) for k, v in excise_by_cat.items()}
 
     vatTaxblAmt   = round(sum(i["vatTaxblAmt"] for i in items), 2)
     iplTaxblAmt   = round(sum(i.get("iplTaxblAmt", 0.0)  for i in items), 2)
-    vatAmt     = round(sum(i["vatAmt"]      for i in items), 2)
-    iplAmt      = round(sum(i.get("iplAmt",0.0)      for i in items), 2)
-    grand_total = round(sum(i["totAmt"]      for i in items), 2)
+    vatAmt        = round(sum(i["vatAmt"] for i in items), 2)
+    iplAmt        = round(sum(i.get("iplAmt", 0.0) for i in items), 2)
+    exciseTxAmt   = round(sum(i.get("exciseTxAmt", 0.0) for i in items), 2)
+    grand_total   = round(sum(i["totAmt"] for i in items), 2)
 
-    net_total = vatTaxblAmt + iplTaxblAmt
-    tax_amt = vatAmt + iplAmt
+    # Net total should represent the original base taxable amount 
+    # (before VAT/IPL/Excise) for ZRA validation
+    net_total = round(sum(
+        i["exciseTaxblAmt"] if i.get("exciseTxCatCd") else (i["vatTaxblAmt"] or i.get("iplTaxblAmt", 0.0))
+        for i in items
+    ), 2)
+    
+    tax_amt = vatAmt + iplAmt + exciseTxAmt
 
     now_dt = frappe.utils.now_datetime()
     if not doc.custom_details or not doc.custom_details[0].payment_mode:
@@ -176,9 +253,9 @@ def _build_invoice_payload(doc):
 
         "salesTyCd":      "N",
         "rcptTyCd":       rcpt_type,
-        "pmtTyCd":         PAYMENT_TYPE_CODE_MAP.get(
-                                                        doc.custom_details[0].payment_mode
-                                                    ) if doc.custom_details else None,
+        "pmtTyCd":        PAYMENT_TYPE_CODE_MAP.get(
+                              doc.custom_details[0].payment_mode
+                          ) if doc.custom_details else None,
         "salesSttsCd":    "02",
 
         "cfmDt":          now_dt.strftime("%Y%m%d%H%M%S"),
@@ -196,7 +273,6 @@ def _build_invoice_payload(doc):
         "cashDcRt":       doc.additional_discount_percentage,
         "cashDcAmt":      discount_amount,
 
-
         # ✅ Auto — Export C1, Normal A
         "taxblAmtA":      taxbl_by_cat.get("A", 0),
         "taxblAmtB":      taxbl_by_cat.get("B", 0),
@@ -204,13 +280,15 @@ def _build_invoice_payload(doc):
         "taxblAmtC2":     taxbl_by_cat.get("C2", 0),
         "taxblAmtC3":     taxbl_by_cat.get("C3", 0),
         "taxblAmtD":      taxbl_by_cat.get("D", 0), 
-        "taxblAmtRvat":  taxbl_by_cat.get("RVAT", 0),
+        "taxblAmtRvat":   taxbl_by_cat.get("RVAT", 0),
         "taxblAmtE":      taxbl_by_cat.get("E", 0),
-        "taxblAmtF":     taxbl_by_cat.get("F", 0),
+        "taxblAmtF":      taxbl_by_cat.get("F", 0),
         "taxblAmtIpl1":   taxbl_by_cat.get("IPL1", 0), 
-        "taxblAmtIpl2":  taxbl_by_cat.get("IPL2", 0),
-        "taxblAmtTl":     0, "taxblAmtEcm":   0,
-        "taxblAmtExeeg":  0, "taxblAmtTot":   0,
+        "taxblAmtIpl2":   taxbl_by_cat.get("IPL2", 0),
+        "taxblAmtTl":     0,
+        "taxblAmtEcm":    excise_taxbl_by_cat.get("ECM", 0),
+        "taxblAmtExeeg":  excise_taxbl_by_cat.get("EXEEG", 0),
+        "taxblAmtTot":    0,
 
         "taxRtA": 16, "taxRtB": 16, "taxRtC1": 0, "taxRtC2": 0,
         "taxRtC3": 0, "taxRtD": 0, "taxRtRvat": 16, "taxRtE": 0,
@@ -229,8 +307,10 @@ def _build_invoice_payload(doc):
         "taxAmtF": tax_by_cat.get("F", 0),
         "taxAmtIpl1": tax_by_cat.get("IPL1", 0),
         "taxAmtIpl2": tax_by_cat.get("IPL2", 0),
-        "taxAmtTl":     0, "taxAmtEcm":   0,
-        "taxAmtExeeg":    0, "taxAmtTot":    0,
+        "taxAmtTl":     0, 
+        "taxAmtEcm":    excise_by_cat.get("ECM", 0),
+        "taxAmtExeeg":  excise_by_cat.get("EXEEG", 0),
+        "taxAmtTot":    0,
 
         "totTaxblAmt":    abs(net_total),
         "totTaxAmt":      tax_amt,
@@ -239,11 +319,11 @@ def _build_invoice_payload(doc):
         "prchrAcptcYn":   "N",
         "remark":         description,
 
-        "currencyTyCd":    "ZMW",
+        "currencyTyCd":    doc.currency if doc.currency else "ZMW",
         "exchangeRt":     doc.conversion_rate if doc.conversion_rate else 1,
 
-        "destnCountryCd":  customer_country_code if is_export and  doc.custom_details[0].invoice_type != "RVAT" else None,
-        "lpoNumber": doc.po_no if is_lpo and doc.po_no else None,
+        "destnCountryCd":  customer_country_code if is_export and doc.custom_details[0].invoice_type != "RVAT" else None,
+        "lpoNumber":       doc.po_no if is_lpo and doc.po_no else None,
 
         "saleCtyCd":      "1",
 
@@ -254,6 +334,7 @@ def _build_invoice_payload(doc):
 
         "itemList": items,
     }
+
     if doc.custom_details and doc.custom_details[0].invoice_type == "RVAT":
         principal_details = doc.custom_details[0].zra_principal_detail
 
