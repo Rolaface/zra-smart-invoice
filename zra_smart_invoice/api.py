@@ -37,7 +37,6 @@ def _zra_user_id(max_len=20):
         user = user.split("@")[0]
     return user[:max_len]
 
-
 def _build_invoice_payload(doc):
     invoice_type = (
         doc.custom_details[0].invoice_type
@@ -45,6 +44,8 @@ def _build_invoice_payload(doc):
         else None
     )
     is_tot = invoice_type == "TOT"
+    is_itx = invoice_type == "ITX"
+    is_no_tax = is_tot or is_itx
 
     is_export = (doc.tax_category == "Export")
     is_lpo = (doc.tax_category == "LPO")
@@ -62,9 +63,9 @@ def _build_invoice_payload(doc):
         qty     = abs(round(float(item.qty or 0), 2))
         item_doc = frappe.get_doc("Item", item.item_code)
 
-        # SKIP TAX TEMPLATE FETCH FOR TOT
+        # SKIP TAX TEMPLATE FETCH FOR TOT & ITX
         mapped_tax = {}
-        if not is_tot:
+        if not is_no_tax:
             if not item.item_tax_template:
                 frappe.throw(f"Tax template is missing for item {item.item_code} under tax category {doc.tax_category}")
             
@@ -73,7 +74,7 @@ def _build_invoice_payload(doc):
             mapped_tax = clean_mapped_taxes(mapped_tax)
         # --------------------------------------------
 
-        is_mtv = item_doc.custom_item_metadata[0].is_mtv if item_doc.custom_item_metadata else False
+        is_mtv = item_doc.custom_item_metadata[0].is_mtv if getattr(item_doc, "custom_item_metadata", None) else False
         rrp_rate = item_doc.custom_item_metadata[0].rrp_rate if is_mtv else None
 
         if is_mtv and rrp_rate:
@@ -81,6 +82,7 @@ def _build_invoice_payload(doc):
         else:
             item_payload, tax_fields = create_item_payload(item, qty, item_doc, mapped_tax)
             
+        # --- START TOT & ITX ITEM OVERRIDE ---
         if is_tot:
             item_payload.update({
                 "vatCatCd": None, "vatTaxblAmt": 0.0, "vatAmt": 0.0, "totCatCd": "TOT",
@@ -88,10 +90,21 @@ def _build_invoice_payload(doc):
                 "iplCatCd": None, "iplTaxblAmt": 0.0, "iplAmt": 0.0,
                 "tlCatCd": None, "tlTaxblAmt": 0.0, "tlAmt": 0.0
             })
+        elif is_itx:
+            # ITX keeps vatTaxblAmt as the supply amount, but nullifies the category and VAT amounts
+            itx_taxable = round(item_payload.get("splyAmt", 0) - item_payload.get("dcAmt", 0), 2)
+            item_payload.update({
+                "vatCatCd": None, "vatTaxblAmt": itx_taxable, "vatAmt": 0.0,
+                "exciseTxCatCd": None, "exciseTaxblAmt": 0.0, "exciseTxAmt": 0.0,
+                "iplCatCd": None, "iplTaxblAmt": 0.0, "iplAmt": 0.0,
+                "tlCatCd": None, "tlTaxblAmt": 0.0, "tlAmt": 0.0
+            })
+        # --- END TOT & ITX ITEM OVERRIDE ---
         
         items.append(item_payload)
         
-        if not is_tot:
+        # Bypass header tax aggregation for TOT and ITX
+        if not is_no_tax:
             for category, details in mapped_tax.items():
                 cfg = SALES_INVOICE_CATEGORY_FIELD_MAP[category]
                 tax_code = details["tax_code"].strip()
@@ -111,7 +124,8 @@ def _build_invoice_payload(doc):
 
     tax_amt = abs(round((vatAmt + iplAmt + exciseTxAmt + tlAmt),2))
     
-    if is_tot:
+    # Zero out total tax header for TOT and ITX
+    if is_no_tax:
         tax_amt = 0.0
 
     total_discount_amt = round(sum(i.get("dcAmt", 0) for i in items), 2)
