@@ -39,10 +39,12 @@ def _zra_user_id(max_len=20):
 
 
 def _build_invoice_payload(doc):
-    """
-        Frappe invoice, the tax is configured as tax-exclusive (added on top),
-        but ZRA expects tax-inclusive
-    """
+    invoice_type = (
+        doc.custom_details[0].invoice_type
+        if doc.custom_details and len(doc.custom_details) > 0
+        else None
+    )
+    is_tot = invoice_type == "TOT"
 
     is_export = (doc.tax_category == "Export")
     is_lpo = (doc.tax_category == "LPO")
@@ -60,25 +62,36 @@ def _build_invoice_payload(doc):
         qty     = abs(round(float(item.qty or 0), 2))
         item_doc = frappe.get_doc("Item", item.item_code)
 
-        tax_template = frappe.get_doc("Item Tax Template", item.item_tax_template)
-        if tax_template is None:
-            frappe.throw(f"Tax rate not found for item {item.item_code} for tax category {doc.tax_category}")
-        mapped_tax = get_map_taxes(tax_template)
-        mapped_tax = clean_mapped_taxes(mapped_tax)
+        # SKIP TAX TEMPLATE FETCH FOR TOT
+        mapped_tax = {}
+        if not is_tot:
+            if not item.item_tax_template:
+                frappe.throw(f"Tax template is missing for item {item.item_code} under tax category {doc.tax_category}")
+            
+            tax_template = frappe.get_doc("Item Tax Template", item.item_tax_template)
+            mapped_tax = get_map_taxes(tax_template)
+            mapped_tax = clean_mapped_taxes(mapped_tax)
+        # --------------------------------------------
+
         is_mtv = item_doc.custom_item_metadata[0].is_mtv if item_doc.custom_item_metadata else False
         rrp_rate = item_doc.custom_item_metadata[0].rrp_rate if is_mtv else None
 
         if is_mtv and rrp_rate:
-            item_payload, tax_fields = create_mtv_item_payload(item,item_doc,qty, rrp_rate, mapped_tax)
-            items.append(item_payload)
-            for category, details in mapped_tax.items():
-                cfg = SALES_INVOICE_CATEGORY_FIELD_MAP[category]
-                tax_code = details["tax_code"].strip()
-                taxbl_by_cat[tax_code] += tax_fields[cfg["taxbl_field"]]
-                tax_by_cat[tax_code]   += tax_fields[cfg["amt_field"]]
+            item_payload, tax_fields = create_mtv_item_payload(item, item_doc, qty, rrp_rate, mapped_tax)
         else:
             item_payload, tax_fields = create_item_payload(item, qty, item_doc, mapped_tax)
-            items.append(item_payload)
+            
+        if is_tot:
+            item_payload.update({
+                "vatCatCd": None, "vatTaxblAmt": 0.0, "vatAmt": 0.0, "totCatCd": "TOT",
+                "exciseTxCatCd": None, "exciseTaxblAmt": 0.0, "exciseTxAmt": 0.0,
+                "iplCatCd": None, "iplTaxblAmt": 0.0, "iplAmt": 0.0,
+                "tlCatCd": None, "tlTaxblAmt": 0.0, "tlAmt": 0.0
+            })
+        
+        items.append(item_payload)
+        
+        if not is_tot:
             for category, details in mapped_tax.items():
                 cfg = SALES_INVOICE_CATEGORY_FIELD_MAP[category]
                 tax_code = details["tax_code"].strip()
@@ -88,21 +101,23 @@ def _build_invoice_payload(doc):
     taxbl_by_cat = {k: round(v, 2) for k, v in taxbl_by_cat.items()}
     tax_by_cat   = {k: round(v, 2) for k, v in tax_by_cat.items()}
 
-    vatAmt     = round(sum(i["vatAmt"] for i in items), 2)
-    iplAmt      = round(sum(i.get("iplAmt",0.0) for i in items), 2)
-    tlAmt       = round(sum(i.get("tlAmt",0.0) for i in items), 2)
+    vatAmt      = round(sum(i.get("vatAmt", 0.0) for i in items), 2)
+    iplAmt      = round(sum(i.get("iplAmt", 0.0) for i in items), 2)
+    tlAmt       = round(sum(i.get("tlAmt", 0.0) for i in items), 2)
     exciseTxAmt = round(sum(i.get("exciseTxAmt", 0.0) for i in items), 2)
 
-    grand_total = round(sum(i["totAmt"] for i in items), 2)
-    total_suply_amt = round(sum(i["splyAmt"] for i in items), 2)
+    grand_total = round(sum(i.get("totAmt", 0.0) for i in items), 2)
+    total_suply_amt = round(sum(i.get("splyAmt", 0.0) for i in items), 2)
 
     tax_amt = abs(round((vatAmt + iplAmt + exciseTxAmt + tlAmt),2))
+    
+    if is_tot:
+        tax_amt = 0.0
 
     total_discount_amt = round(sum(i.get("dcAmt", 0) for i in items), 2)
     net_supply_after_discount = round(total_suply_amt - total_discount_amt, 2)
 
     totTaxblAmt = abs(round(net_supply_after_discount - tax_amt, 2))
-
 
     now_dt = frappe.utils.now_datetime()
     if not doc.custom_details or not doc.custom_details[0].payment_mode:
@@ -685,37 +700,6 @@ def debug_invoice_payload(invoice_name):
     """
     doc     = frappe.get_doc("Sales Invoice", invoice_name)
     payload = _build_invoice_payload(doc)
-
-    # Show a readable per-item breakdown
-    lines = ["<b>Per-item breakdown:</b><br>"]
-    for item in payload["itemList"]:
-        lines.append(
-            f"<b>{item['itemNm']}</b>: "
-            f"qty={item['qty']} × prc={item['prc']} = "
-            f"splyAmt={item['splyAmt']} | "
-            f"vatAmt={item['vatAmt']} | "
-            f"totAmt={item['totAmt']}<br>"
-        )
-
-    lines.append("<br><b>Invoice totals:</b><br>")
-    lines.append(f"taxblAmtA  = {payload['taxblAmtA']}<br>")
-    lines.append(f"taxAmtA    = {payload['taxAmtA']}<br>")
-    lines.append(f"totTaxblAmt= {payload['totTaxblAmt']}<br>")
-    lines.append(f"totTaxAmt  = {payload['totTaxAmt']}<br>")
-    lines.append(f"totAmt     = {payload['totAmt']}<br>")
-
-    # Verify ZRA cross-checks locally
-    lines.append("<br><b>ZRA cross-check (local verification):</b><br>")
-    sum_sply = round(sum(i["splyAmt"] for i in payload["itemList"]), 2)
-    sum_vat  = round(sum(i["vatAmt"]  for i in payload["itemList"]), 2)
-    sum_tot  = round(sum(i["totAmt"]  for i in payload["itemList"]), 2)
-
-    lines.append(f"sum(splyAmt)={sum_sply} == taxblAmtA={payload['taxblAmtA']} → {'✅' if sum_sply == payload['taxblAmtA'] else '❌'}<br>")
-    lines.append(f"sum(vatAmt) ={sum_vat}  == taxAmtA  ={payload['taxAmtA']}   → {'✅' if sum_vat  == payload['taxAmtA']   else '❌'}<br>")
-    lines.append(f"sum(totAmt) ={sum_tot}  == totAmt   ={payload['totAmt']}    → {'✅' if sum_tot  == payload['totAmt']    else '❌'}<br>")
-    lines.append(f"taxblAmtA+taxAmtA={round(payload['taxblAmtA']+payload['taxAmtA'],2)} == totAmt={payload['totAmt']} → {'✅' if round(payload['taxblAmtA']+payload['taxAmtA'],2) == payload['totAmt'] else '❌'}<br>")
-
-    frappe.msgprint("".join(lines), title="ZRA Payload Debug", wide=True)
     return payload
 
 
