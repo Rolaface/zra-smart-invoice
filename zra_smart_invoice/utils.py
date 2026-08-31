@@ -16,7 +16,12 @@ def _safe_set(doc: Any, field: str, value: Any) -> None:
     except Exception:
         pass
 
-
 def sanitize_zra_message(message: str) -> str:
     # Escape angle brackets so `<vatCatCd>` can't be parsed as an HTML tag
     return message.replace("<", "").replace(">", "")
+
+def clean_mapped_taxes(mapped_tax):
+    if "Insurance Premium Levy" in mapped_tax:
+        mapped_tax = {"Insurance Premium Levy": mapped_tax["Insurance Premium Levy"]}
+
+    return mapped_tax
