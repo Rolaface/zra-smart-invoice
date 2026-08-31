@@ -184,7 +184,7 @@ def _build_invoice_payload(doc):
         "taxblAmtIpl1":   taxbl_by_cat.get("IPL1", 0), 
         "taxblAmtIpl2":  taxbl_by_cat.get("IPL2", 0),
         "taxblAmtTl":     0, "taxblAmtEcm": taxbl_by_cat.get("ECM", 0),
-        "taxblAmtExeeg":  0, "taxblAmtTot":   0,
+        "taxblAmtExeeg":  taxbl_by_cat.get("EXEEG", 0), "taxblAmtTot":   0,
 
         "taxRtA": 16, "taxRtB": 16, "taxRtC1": 0, "taxRtC2": 0,
         "taxRtC3": 0, "taxRtD": 0, "taxRtRvat": 16, "taxRtE": 0,
@@ -204,7 +204,7 @@ def _build_invoice_payload(doc):
         "taxAmtIpl1": tax_by_cat.get("IPL1", 0),
         "taxAmtIpl2": tax_by_cat.get("IPL2", 0),
         "taxAmtTl":     0, "taxAmtEcm": tax_by_cat.get("ECM", 0),
-        "taxAmtExeeg":    0, "taxAmtTot":    0,
+        "taxAmtExeeg":    tax_by_cat.get("EXEEG", 0), "taxAmtTot":    0,
 
         "totTaxblAmt":    abs(totTaxblAmt),
         "totTaxAmt":      tax_amt,
@@ -1047,7 +1047,7 @@ def _build_purchase_stock_master_payload(doc, stock_items):
     }
 
 def on_purchase_invoice_submit(doc, method):
-    if not is_zra_enabled():
+    if is_zra_enabled():
         return
 
     result = {}
