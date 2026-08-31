@@ -57,6 +57,7 @@ def create_item_payload(item, qty, item_doc, mapped_tax):
         "tlAmt": tax_fields["tlAmt"],
         "vatAmt": tax_fields["vatAmt"],
         "exciseTxAmt": tax_fields["exciseTxAmt"],
+        "rentalYn":  "Y" if item_doc.custom_item_metadata[0].rentalyn else "N",
         "totAmt": tot_amt if not item.discount_amount else discounted_net_price,
     }
 
