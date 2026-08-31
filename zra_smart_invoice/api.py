@@ -90,12 +90,13 @@ def _build_invoice_payload(doc):
 
     vatAmt     = round(sum(i["vatAmt"] for i in items), 2)
     iplAmt      = round(sum(i.get("iplAmt",0.0) for i in items), 2)
+    tlAmt       = round(sum(i.get("tlAmt",0.0) for i in items), 2)
     exciseTxAmt = round(sum(i.get("exciseTxAmt", 0.0) for i in items), 2)
 
     grand_total = round(sum(i["totAmt"] for i in items), 2)
     total_suply_amt = round(sum(i["splyAmt"] for i in items), 2)
 
-    tax_amt = abs(round((vatAmt + iplAmt + exciseTxAmt),2))
+    tax_amt = abs(round((vatAmt + iplAmt + exciseTxAmt + tlAmt),2))
 
     total_discount_amt = round(sum(i.get("dcAmt", 0) for i in items), 2)
     net_supply_after_discount = round(total_suply_amt - total_discount_amt, 2)
@@ -173,12 +174,12 @@ def _build_invoice_payload(doc):
         "taxblAmtD":      taxbl_by_cat.get("D", 0), 
         "taxblAmtRvat":  taxbl_by_cat.get("RVAT", 0),
         "taxblAmtE":      taxbl_by_cat.get("E", 0),
-        "taxblAmtF":     taxbl_by_cat.get("F", 0),
         "taxblAmtIpl1":   taxbl_by_cat.get("IPL1", 0), 
         "taxblAmtIpl2":  taxbl_by_cat.get("IPL2", 0),
         "taxblAmtEcm":     taxbl_by_cat.get("ECM", 0),
         "taxblAmtExeeg":  taxbl_by_cat.get("EXEEG", 0), 
-        "taxblAmtTl":     0, 
+        "taxblAmtF":     taxbl_by_cat.get("F", 0),
+        "taxblAmtTl":     taxbl_by_cat.get("TL", 0), 
         "taxblAmtTot":   0,
 
         "taxRtA": 16, "taxRtB": 16, "taxRtC1": 0, "taxRtC2": 0,
@@ -200,7 +201,7 @@ def _build_invoice_payload(doc):
         "taxAmtIpl2": tax_by_cat.get("IPL2", 0),
         "taxAmtEcm": tax_by_cat.get("ECM", 0),
         "taxAmtExeeg": tax_by_cat.get("EXEEG", 0), 
-        "taxAmtTl":     0, 
+        "taxAmtTl":     tax_by_cat.get("TL", 0), 
         "taxAmtTot":    0,
 
         "totTaxblAmt":    abs(totTaxblAmt),
