@@ -1,8 +1,9 @@
+from zra_smart_invoice.modules.purchase_invoice.item import create_pi_item_payload
 from zra_smart_invoice.modules.sales_invoice.item import create_item_payload
 from zra_smart_invoice.modules.item.service import build_item_payload
 from zra_smart_invoice.utils import clean_mapped_taxes, sanitize_zra_message
 from zra_smart_invoice.modules.mtv.utils import create_mtv_item_payload
-from zra_smart_invoice.config.constant import ITEM_TYPE_CODE_MAP, PAYMENT_TYPE_CODE_MAP, SALES_INVOICE_CATEGORY_FIELD_MAP
+from zra_smart_invoice.config.constant import ITEM_TYPE_CODE_MAP, PAYMENT_TYPE_CODE_MAP, PURCHASE_INVOICE_CATEGORY_FIELD_MAP, SALES_INVOICE_CATEGORY_FIELD_MAP
 import frappe
 import requests
 from zra_smart_invoice.config import is_zra_enabled, get_zra_config
@@ -87,26 +88,18 @@ def _build_invoice_payload(doc):
     taxbl_by_cat = {k: round(v, 2) for k, v in taxbl_by_cat.items()}
     tax_by_cat   = {k: round(v, 2) for k, v in tax_by_cat.items()}
 
-    vatTaxblAmt   = round(sum(i["vatTaxblAmt"] for i in items), 2)
     vatAmt     = round(sum(i["vatAmt"] for i in items), 2)
-
-    iplTaxblAmt   = round(sum(i.get("iplTaxblAmt", 0.0) for i in items), 2)
     iplAmt      = round(sum(i.get("iplAmt",0.0) for i in items), 2)
-
-    exciseTaxblAmt = round(sum(i.get("exciseTaxblAmt", 0.0) for i in items), 2)
     exciseTxAmt = round(sum(i.get("exciseTxAmt", 0.0) for i in items), 2)
 
     grand_total = round(sum(i["totAmt"] for i in items), 2)
     total_suply_amt = round(sum(i["splyAmt"] for i in items), 2)
 
-    net_total = vatTaxblAmt + iplTaxblAmt + exciseTaxblAmt
     tax_amt = abs(round((vatAmt + iplAmt + exciseTxAmt),2))
 
     total_discount_amt = round(sum(i.get("dcAmt", 0) for i in items), 2)
     net_supply_after_discount = round(total_suply_amt - total_discount_amt, 2)
 
-    # totTaxblAmt = abs(round((total_suply_amt - tax_amt),2))
-    # totTaxblAmt = abs(round((grand_total - tax_amt),2))
     totTaxblAmt = abs(round(net_supply_after_discount - tax_amt, 2))
 
 
@@ -732,71 +725,38 @@ def debug_invoice_payload(invoice_name):
 def _build_purchase_payload(doc):
     items = []
 
+    taxbl_by_cat = defaultdict(float)
+    tax_by_cat   = defaultdict(float)
     for item in doc.items:
 
-        tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item.item_tax_template, "parenttype": "Item Tax Template"}, "tax_rate")
-        if tax_rate is None:
-            frappe.throw(f"Tax rate not found for item {item.item_code} for tax category {doc.tax_category}")
-
-        vat_cat_cd = item.item_tax_template.split("|")[0] if item.item_tax_template else None
-
-        qty         = round(float(item.qty  or 0), 4)        
-        
+        qty = round(float(item.qty  or 0), 4)        
         item_doc = frappe.get_doc("Item", item.item_code)
-        net_amt   = abs(round(float(item.price_list_rate or 0), 2))
-        vat_amt   = abs(round(net_amt * (tax_rate / 100), 4))
-        prc   = abs(round(net_amt + vat_amt, 2))
-        tot_amt = abs(round(prc*qty, 2))
-        vatTaxblAmt = abs(round(net_amt*flt(item.qty),4))
+        tax_template = frappe.get_doc("Item Tax Template", item.item_tax_template)
+        if tax_template is None:
+            frappe.throw(f"Tax rate not found for item {item.item_code} for tax category {doc.tax_category}")
+        mapped_tax = get_map_taxes(tax_template)
+        # mapped_tax = clean_mapped_taxes(mapped_tax)
+               
+        item_payload, tax_fields = create_pi_item_payload(item, qty, item_doc, mapped_tax)
+        items.append(item_payload)
+        for category, details in mapped_tax.items():
+            cfg = PURCHASE_INVOICE_CATEGORY_FIELD_MAP[category]
+            tax_code = details["tax_code"].strip()
+            taxbl_by_cat[tax_code] += tax_fields[cfg["taxbl_field"]]
+            tax_by_cat[tax_code]   += tax_fields[cfg["amt_field"]]
 
-        discount_amount = 0
-        if item.discount_amount or item.discount_percentage:
-            discount_amount = abs(round(tot_amt*(item.discount_percentage/100),4))
-            discounted_net_price = abs(round(tot_amt-discount_amount, 4))
-            vatTaxblAmt = abs(round(discounted_net_price/(1+(tax_rate/100)),4))
-            vat_amt = abs(round(discounted_net_price-vatTaxblAmt,4))
+    taxbl_by_cat = {k: round(v, 2) for k, v in taxbl_by_cat.items()}
+    tax_by_cat = {k: round(v, 2) for k, v in tax_by_cat.items()}
 
-        items.append({
-            "itemSeq":         item.idx,
-            "itemCd":          item.item_code,
-            "itemNm":          item.item_name,
-            "itemClsCd":       item_doc.custom_item_metadata[0].hsn_code,
-            "bcd":             None,
-
-            "spplrItemClsCd":  None,
-            "spplrItemCd":     None,
-            "spplrItemNm":     None,
-
-            "pkgUnitCd":       frappe.get_value("Packaging Unit Of Measure", item_doc.custom_item_metadata[0].packaging_uom, "code"),
-            "pkg":             item_doc.custom_item_metadata[0].packing_unit,
-            "qtyUnitCd":       frappe.get_value("UOM", item_doc.stock_uom, "common_code"),
-
-            "qty":             qty,
-            "prc":             prc,
-            "splyAmt":         tot_amt,
-            "dcRt":            item.discount_percentage,
-            "dcAmt":           discount_amount,
-
-            "vatCatCd":        vat_cat_cd.strip(),
-            "taxblAmt":        vatTaxblAmt,
-            "taxAmt":          vat_amt,
-
-            "iplCatCd":        None,
-            "tlCatCd":         None,
-            "exciseCatCd":     None,
-            "iplTaxblAmt":     0.0,
-            "tlTaxblAmt":      0.0,
-            "exciseTaxblAmt":  0.0,
-            "iplAmt":          0.0,
-            "tlAmt":           0.0,
-            "exciseTxAmt":     0.0,
-
-            "totAmt":          tot_amt if not item.discount_amount else discounted_net_price,
-        })
-
-    net_total   = round(sum(i["taxblAmt"] for i in items), 2)
-    tax_amt     = round(sum(i["taxAmt"]   for i in items), 2)
+    total_supply_amt = round(sum(i["splyAmt"] for i in items), 2)
+    tax_amt = round(sum(tax_by_cat.values()), 2)
     grand_total = round(sum(i["totAmt"]   for i in items), 2)
+
+    total_discount_amt = round(sum(i.get("dcAmt", 0) for i in items), 2)
+    net_supply_after_discount = round(total_supply_amt - total_discount_amt, 2)
+
+    totTaxblAmt = abs(round(net_supply_after_discount - tax_amt, 2))
+
     now_dt      = frappe.utils.now_datetime()
 
     return {
@@ -823,7 +783,7 @@ def _build_purchase_payload(doc):
         "cfmDt":        now_dt.strftime("%Y%m%d%H%M%S"),
 
         "totItemCnt":   len(items),
-        "totTaxblAmt":  net_total,
+        "totTaxblAmt":  totTaxblAmt,
         "totTaxAmt":    tax_amt,
         "totAmt":       grand_total,
 
@@ -1051,7 +1011,7 @@ def _build_purchase_stock_master_payload(doc, stock_items):
     }
 
 def on_purchase_invoice_submit(doc, method):
-    if is_zra_enabled():
+    if not is_zra_enabled():
         return
 
     result = {}
