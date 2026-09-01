@@ -14,6 +14,5 @@ def _apply_mtv_discount_patch():
 
     tax_and_totals.calculate_taxes_and_totals.calculate_item_values = calculate_item_values
 
-
 _apply_tax_floor_patch()
 _apply_mtv_discount_patch()

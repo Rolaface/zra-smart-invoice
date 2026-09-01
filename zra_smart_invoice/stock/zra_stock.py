@@ -4,8 +4,11 @@ import frappe
 from frappe.utils import flt, getdate
 import time
 
-from zra_smart_invoice.config import is_zra_enabled
+from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
+from zra_smart_invoice.config.constant import _ALL_TAX_FIELDS, SALES_INVOICE_CATEGORY_FIELD_MAP
+from zra_smart_invoice.modules.item.utils import get_map_taxes
+from zra_smart_invoice.modules.sales_invoice.utils import cascade_forward
 
 def on_stock_transaction_submit(doc, method):
 
@@ -90,67 +93,87 @@ def _get_zra_sar_type(doc):
         return mapping.get(doc.stock_entry_type)
 
     return None
-
 def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
     item_list = []
-    total_taxable = 0
-    total_tax = 0
-    total_amt = 0
+    total_taxable = 0.0
+    total_tax = 0.0
+    total_amt = 0.0
 
     for idx, item in enumerate(doc.items, start=1):
         if doc.doctype == "Stock Reconciliation":
             current_qty = flt(item.current_qty)
             new_qty = flt(item.qty)
             qty_change = new_qty - current_qty
-            
+
             if qty_change == 0:
-                continue 
-                
+                continue
+
             if recon_filter == "positive" and qty_change < 0:
                 continue
             if recon_filter == "negative" and qty_change > 0:
                 continue
-                
+
             qty = abs(qty_change)
             rate = flt(item.valuation_rate)
         else:
             qty = flt(item.transfer_qty) if hasattr(item, "transfer_qty") else flt(item.qty)
             rate = flt(item.basic_rate) or flt(item.valuation_rate)
 
+        qty = abs(round(qty, 2))
+        rate = abs(round(rate, 2))
+
         item_doc = frappe.get_cached_doc("Item", item.item_code)
-        
-        item_class_code = frappe.db.get_value("Custom Item Details", {"parent": item.item_code}, "hsn_code") or ""
-        pkg_unit_name = frappe.db.get_value("Custom Item Details", {"parent": item.item_code}, "packaging_uom")
+
+        item_class_code = (
+            frappe.db.get_value(
+                "Custom Item Details", {"parent": item.item_code}, "hsn_code"
+            )
+            or "43322555"
+        )
+        pkg_unit_name = frappe.db.get_value(
+            "Custom Item Details", {"parent": item.item_code}, "packaging_uom"
+        )
         qty_unit_name = item.get("stock_uom") or item_doc.stock_uom
 
         pkg_unit_cd = _resolve_pkg_unit_code(pkg_unit_name)
         qty_unit_cd = _resolve_qty_unit_code(qty_unit_name)
 
-        vat_cat_cd = "A"  
-        vat_cat_percentage = 16.0  
-        
-        if item_doc.taxes:
-            tax_template_name = item_doc.taxes[0].item_tax_template
-            if tax_template_name:
-                tax_template_doc = frappe.get_cached_doc("Item Tax Template", tax_template_name)
-                
-                if tax_template_doc.title:
-                    vat_cat_cd = tax_template_doc.title.split("|")[0].strip()
-                
-                if tax_template_doc.taxes:
-                    vat_cat_percentage = flt(tax_template_doc.taxes[0].tax_rate)
+        mapped_tax = {}
+        item_tax_template_name = item.get("item_tax_template") or (
+            item_doc.taxes[0].item_tax_template if item_doc.taxes else None
+        )
 
-        sply_amt = qty * rate
-        
-        if vat_cat_percentage > 0:
-            taxable_amt = sply_amt / (1 + (vat_cat_percentage / 100.0))
-        else:
-            taxable_amt = sply_amt
-            
-        tax_amt = sply_amt - taxable_amt 
+        if item_tax_template_name:
+            tax_template = frappe.get_cached_doc("Item Tax Template", item_tax_template_name)
+            mapped_tax = get_map_taxes(tax_template)
 
-        total_taxable += taxable_amt
-        total_tax += tax_amt
+        prc, unit_breakdown = cascade_forward(rate, mapped_tax)
+        sply_amt = abs(round(prc * qty, 2))
+
+        tax_fields = dict(_ALL_TAX_FIELDS)
+        for category, amounts in unit_breakdown.items():
+            cfg = SALES_INVOICE_CATEGORY_FIELD_MAP.get(category)
+            if cfg:
+                code = mapped_tax[category]["tax_code"]
+                tax_fields[cfg["cat_field"]] = code
+                tax_fields[cfg["taxbl_field"]] = abs(round(amounts["base"] * qty, 4))
+                tax_fields[cfg["amt_field"]] = abs(round(amounts["tax"] * qty, 4))
+
+        vatCatCd = tax_fields.get("vatCatCd") or None
+        iplCatCd = tax_fields.get("iplCatCd") or None
+        tlCatCd = tax_fields.get("tlCatCd") or None
+        exciseTxCatCd = tax_fields.get("exciseTxCatCd") or None
+
+        vatAmt = tax_fields.get("vatAmt", 0.0)
+        iplAmt = tax_fields.get("iplAmt", 0.0)
+        tlAmt = tax_fields.get("tlAmt", 0.0)
+        exciseTxAmt = tax_fields.get("exciseTxAmt", 0.0)
+
+        taxblAmt = tax_fields.get("vatTaxblAmt", 0.0)
+        taxAmt = round(vatAmt + iplAmt + tlAmt + exciseTxAmt, 2)
+
+        total_taxable += taxblAmt
+        total_tax += taxAmt
         total_amt += sply_amt
 
         item_list.append({
@@ -159,36 +182,47 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
             "itemClsCd": item_class_code,
             "itemNm": item.item_name or item.item_code,
             "pkgUnitCd": pkg_unit_cd,
-            "qtyUnitCd": qty_unit_cd,
-            "qty": round(qty, 2),
-            "prc": round(rate, 2),
-            "splyAmt": round(sply_amt, 2),
-            "totDcAmt": 0.0,
             "pkg": 0.0,
-            "taxblAmt": round(taxable_amt, 2),
-            "vatCatCd": vat_cat_cd,
-            "taxAmt": round(tax_amt, 2),
-            "totAmt": round(sply_amt, 2)
+            "qtyUnitCd": qty_unit_cd,
+            "qty": qty,
+            "prc": rate,
+            "splyAmt": sply_amt,
+            "totDcAmt": 0.0,
+            "taxblAmt": taxblAmt,
+            "vatCatCd": vatCatCd,
+            "iplCatCd": iplCatCd,
+            "tlCatCd": tlCatCd,
+            "exciseTxCatCd": exciseTxCatCd,
+            "vatAmt": vatAmt,
+            "iplAmt": iplAmt,
+            "tlAmt": tlAmt,
+            "exciseTxAmt": exciseTxAmt,
+            "taxAmt": taxAmt,
+            "totAmt": sply_amt,
+            "bcd": "",
         })
 
     posting_date = getdate(doc.posting_date).strftime("%Y%m%d")
+    config = get_zra_config() or {}
 
     return {
+        "tpin": config.get("tpin"),
+        "bhfId": config.get("bhf_id"),
         "sarNo": int(time.time()),
         "orgSarNo": 0,
-        "regTyCd": "M",              
-        "sarTyCd": zra_sar_type,     
+        "regTyCd": "M",
+        "sarTyCd": zra_sar_type,
         "ocrnDt": posting_date,
         "totItemCnt": len(item_list),
-        "totTaxblAmt": round(total_taxable, 2),
-        "totTaxAmt": round(total_tax, 2),
+        "totTaxblAmt": round(total_taxable, 4),
+        "totTaxAmt": round(total_tax, 4),
         "totAmt": round(total_amt, 2),
-        "remark": (doc.get("remarks", "") or doc.get("purpose", ""))[:400],
+        "remark": (doc.get("remarks", "") or doc.get("purpose", ""))[:400] or f"Stock movement type {zra_sar_type}",
         "regrId": doc.owner or "Admin",
         "regrNm": doc.owner or "Admin",
         "modrNm": doc.modified_by or "Admin",
         "modrId": doc.modified_by or "Admin",
-        "itemList": item_list
+        "itemList": item_list,
     }
 
 def _build_stock_master_payload(doc):
