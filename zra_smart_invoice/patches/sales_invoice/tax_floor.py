@@ -59,7 +59,7 @@ def _get_rrp_floored_amount(self, item, tax_rate):
         self._rrp_cache = {}
 
     if item.item_code not in self._rrp_cache:
-        self._rrp_cache[item.item_code] = _fetch_rrp(item.item_code)
+        self._rrp_cache[item.item_code] = _fetch_rrp(self, item.item_code)
 
     rrp = self._rrp_cache[item.item_code]
     item_rate = item.price_list_rate + abs(round((item.price_list_rate*(tax_rate/100)),2))
@@ -71,7 +71,9 @@ def _get_rrp_floored_amount(self, item, tax_rate):
     return item.net_amount
 
 
-def _fetch_rrp(item_code):
+def _fetch_rrp(self, item_code):
+    if self.doc.doctype != "Sales Invoice":
+        return 0.0
     item_doc = frappe.get_cached_doc("Item", item_code)
     metadata = item_doc.get("custom_item_metadata")
 
@@ -95,7 +97,7 @@ def _cache_mtv_row_total(self, item, tax, tax_base_amount, tax_rate):
         return None
 
     if item.item_code not in self._rrp_cache:
-        self._rrp_cache[item.item_code] = _fetch_rrp(item.item_code)
+        self._rrp_cache[item.item_code] = _fetch_rrp(self, item.item_code)
 
     rrp = self._rrp_cache[item.item_code]
     if not rrp:
