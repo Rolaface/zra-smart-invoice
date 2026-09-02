@@ -40,6 +40,8 @@ doc_events = {
     "Purchase Invoice": {
         "before_submit": "zra_smart_invoice.api.on_purchase_invoice_submit",
         "on_cancel":     "zra_smart_invoice.api.on_purchase_invoice_cancel",
+        "before_insert": "zra_smart_invoice.modules.purchase_invoice.hooks.before_insert_hooks.before_insert",
+
     },
     # ✅ Stock Entry — auto banta hai Purchase pe
     "Stock Entry": {

@@ -12,7 +12,7 @@ def calculate_item_values(self):
         for item in self.doc.items:
             self.doc.round_floats_in(item, do_not_round_fields=do_not_round_fields)
 
-            rrp_rate = _fetch_rrp(item.item_code)
+            rrp_rate = _fetch_rrp(self, item.item_code)
 
             item_rate = item.price_list_rate + (item.price_list_rate*0.16)
 
