@@ -4,7 +4,11 @@ from zra_smart_invoice.utils import _zra_user_id
 import frappe
 
 def build_item_payload(doc):
-    data = frappe.request.get_json()
+    data = None
+    try:
+        data = frappe.request.get_json()
+    except Exception as e:
+        frappe.log_error(str(e), "Error occurred while fetching request data")
 
     tax_templates = get_tax_template(doc)
     validate_zra_taxes(tax_templates)

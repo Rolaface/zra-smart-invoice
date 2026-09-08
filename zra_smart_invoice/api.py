@@ -718,40 +718,8 @@ def on_sales_invoice_submit(doc, method):
 
 
 def on_sales_invoice_cancel(doc, method):
-    """
-    Hook: on_cancel on Sales Invoice
-    Does NOT block ERPNext cancel — only warns if ZRA fails.
-    """
-    if not is_zra_enabled():
-        return
-    try:
-        zra_response = json.loads(doc.custom_details[0].zra_response) if doc.custom_details and doc.custom_details[0].zra_response else {}
-        now_str = frappe.utils.now_datetime().strftime("%Y%m%d%H%M%S")
-        # payload = {
-        #     "orgInvcNo": zra_response.get("rcptNo"),
-        #     "cnclReqDt": now_str,
-        #     "cnclDt":    now_str,
-        #     "rfdRsnCd":  "01",
-        #     "remark":    "Invoice Cancelled",
-        # }
-        payload = _build_invoice_payload(doc)
-
-        result = make_vsdc_request("trnsSales/saveSales", payload)
-        if result.get("resultCd") == "000":
-            frappe.msgprint("✅ ZRA cancellation submitted successfully.")
-        else:
-            frappe.msgprint(
-                f"⚠️ ZRA cancellation warning: {result}",
-                indicator="orange",
-            )
-            frappe.throw(f"ZRA cancel failed: {result}")
-    except Exception as e:
-        frappe.log_error(str(e), f"ZRA Cancel Failed: {doc.name}")
-        frappe.msgprint(
-            f"⚠️ ZRA cancel failed (ERPNext cancel still processed): {str(e)}",
-            indicator="orange",
-        )
-        frappe.throw(f"ZRA cancel failed: {str(e)}")
+    
+    frappe.throw(f"ZRA Invoice Cancellation is not supported. Please contact ZRA support to cancel invoice {doc.name}.")
 
 
 # ═══════════════════════════════════════════════════════════════════

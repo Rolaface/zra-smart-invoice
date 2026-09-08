@@ -5,7 +5,7 @@ from erpnext.accounts.party import get_due_date_from_template
 import frappe
 from frappe.utils import getdate
 
-def make_pi_from_purcahse_sale(payload):
+def make_pi_from_purchase_sale(payload):
     try:
         frappe.log_error(f"Supplier Tpin = {payload.get("spplrTpin")}")
         supplier_doc = frappe.get_doc("Supplier", {"tax_id": payload.get("spplrTpin")})
@@ -64,4 +64,11 @@ def make_pi_from_purcahse_sale(payload):
                                 message=f"Supplier with TPIN {payload.get("spplrTpin")} not found",
                                 status_code=404,
                                 http_status=404
+                            )
+    except Exception as e:
+        return send_old_response(
+                                status="fail",
+                                message=str(e),
+                                status_code=500,
+                                http_status=500
                             )

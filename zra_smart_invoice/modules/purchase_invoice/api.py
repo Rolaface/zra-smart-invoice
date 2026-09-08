@@ -1,5 +1,5 @@
 from zra_smart_invoice.utils import sanitize_zra_message
-from zra_smart_invoice.modules.purchase_invoice.service import make_pi_from_purcahse_sale
+from zra_smart_invoice.modules.purchase_invoice.service import make_pi_from_purchase_sale
 from zra_smart_invoice.modules.purchase_invoice.utils import create_purchase_sales_response
 from zra_smart_invoice.client import make_vsdc_request
 import frappe
@@ -44,7 +44,7 @@ def save_purchase_sales():
                 frappe.throw(_(error_message))
 
         else:
-            response = make_pi_from_purcahse_sale(payload)
+            response = make_pi_from_purchase_sale(payload)
 
     except Exception as e:
         raise e

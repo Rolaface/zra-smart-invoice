@@ -10,7 +10,6 @@ from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
 from zra_smart_invoice.utils import _zra_user_id
 from custom_api.utils.response import send_response, send_response_list
-from .imported_items_pi import create_purchase_invoices_for_imports
 
 
 def _format_import_item(item: Dict[str, Any], user_id: str) -> Dict[str, Any]:
@@ -208,8 +207,6 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
         _create_stock_entry(items)
 
         zra_response = update_import_items(task_cd, dcl_de, items)
-        ## Dont create PIs for imports as it is not required by ZRA anymore.
-        # created_pis = create_purchase_invoices_for_imports(items, dcl_no, dcl_de)
 
 
         _create_import_logs(data, items, status_label="Processed")
