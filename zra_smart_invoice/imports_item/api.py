@@ -8,7 +8,7 @@ from frappe.utils import cint, flt, now, getdate
 from zra_smart_invoice.config.constant import PAYMENT_TYPE_CODE_MAP
 from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
-from zra_smart_invoice.utils import _zra_user_id
+from zra_smart_invoice.utils import _get_next_sar_no, _zra_user_id
 from custom_api.utils.response import send_response, send_response_list
 
 
@@ -447,7 +447,7 @@ def _sync_import_stock_to_zra(doc):
     stock_items_payload = {
         "tpin": config.get("tpin"),
         "bhfId": config.get("bhf_id"),
-        "sarNo": int(time.time()),
+        "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",              
         "sarTyCd": "01",

@@ -1,3 +1,5 @@
+import time
+
 import frappe
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -25,3 +27,7 @@ def clean_mapped_taxes(mapped_tax):
         mapped_tax = {"Insurance Premium Levy": mapped_tax["Insurance Premium Levy"]}
 
     return mapped_tax
+
+def _get_next_sar_no() -> int:
+    """Generates a unique Stock Accounting Record Number (sarNo)."""
+    return int(time.time() * 1000)

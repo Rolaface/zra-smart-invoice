@@ -9,6 +9,7 @@ from zra_smart_invoice.client import make_vsdc_request
 from zra_smart_invoice.config.constant import _ALL_TAX_FIELDS, SALES_INVOICE_CATEGORY_FIELD_MAP
 from zra_smart_invoice.modules.item.utils import get_map_taxes
 from zra_smart_invoice.modules.sales_invoice.utils import cascade_forward
+from zra_smart_invoice.utils import _get_next_sar_no
 
 def on_stock_transaction_submit(doc, method):
 
@@ -208,7 +209,7 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
     return {
         "tpin": config.get("tpin"),
         "bhfId": config.get("bhf_id"),
-        "sarNo": int(time.time()),
+        "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",
         "sarTyCd": zra_sar_type,
