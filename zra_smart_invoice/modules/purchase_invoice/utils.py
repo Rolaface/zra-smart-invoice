@@ -13,9 +13,11 @@ def build_purchase_sales_items(items):
             frappe.throw("item_code is required")
 
         item_doc = frappe.get_doc("Item", item_code)
-
-        item_tax_template = get_item_tax_template(item.get("vatCatCd"))
-        tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item_tax_template.get("name"), "parenttype": "Item Tax Template"}, "tax_rate")
+        item_tax_template = None
+        tax_rate = 0
+        if item.get("vatCatCd"):
+            item_tax_template = get_item_tax_template(item.get("vatCatCd"))
+            tax_rate = frappe.get_value("Item Tax Template Detail", {"parent": item_tax_template.get("name"), "parenttype": "Item Tax Template"}, "tax_rate")
         price = item.get("prc")/(1+(tax_rate/100))
 
         item_dict = {
@@ -24,7 +26,7 @@ def build_purchase_sales_items(items):
             "qty": float(item.get("qty", 1)),
             "price_list_rate": price,
             "warehouse": item.get("mapped_erp_warehouse"),
-            "item_tax_template": item_tax_template.get("name")
+            "item_tax_template": item_tax_template.get("name", None) if item_tax_template else None,
         }
 
         po_items.append(item_dict)

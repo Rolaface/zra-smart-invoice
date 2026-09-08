@@ -382,9 +382,11 @@ def on_item_save(doc, method):
     try:
         payload = build_item_payload(doc)
 
-        # ✅ Method ke hisaab se alag endpoint
         if method == "after_insert":
             endpoint = "items/saveItem"
+        elif method == "on_update" and doc.flags.in_insert:
+            frappe.log_error("ZRA Item Sync Skipped: Cannot update item during insert.")
+            return
         else:
             endpoint = "items/updateItem"
 
