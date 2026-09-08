@@ -208,8 +208,8 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
         _create_stock_entry(items)
 
         zra_response = update_import_items(task_cd, dcl_de, items)
-
-        created_pis = create_purchase_invoices_for_imports(items, dcl_no, dcl_de)
+        ## Dont create PIs for imports as it is not required by ZRA anymore.
+        # created_pis = create_purchase_invoices_for_imports(items, dcl_no, dcl_de)
 
 
         _create_import_logs(data, items, status_label="Processed")
