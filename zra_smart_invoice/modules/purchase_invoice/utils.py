@@ -20,7 +20,7 @@ def build_purchase_sales_items(items):
 
         item_dict = {
             "item_code": item_code,
-            "item_name": item_doc.name,
+            "item_name": item_doc.item_name,
             "qty": float(item.get("qty", 1)),
             "price_list_rate": price,
             "warehouse": item.get("mapped_erp_warehouse"),
