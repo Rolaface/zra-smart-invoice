@@ -27,7 +27,7 @@ def get_current_tax_and_net_amount(self, item, tax, item_tax_map):
         if tax.account_head in item_tax_map:
             current_net_amount = item.net_amount
         tax_base_amount = _get_rrp_floored_amount(self, item, tax_rate)
-        current_tax_amount = abs(round((tax_rate / 100.0) * tax_base_amount,2))
+        current_tax_amount = (round((tax_rate / 100.0) * tax_base_amount,2))
         _cache_mtv_row_total(self, item, tax, tax_base_amount, tax_rate)
 
     elif tax.charge_type == "On Previous Row Amount":
@@ -38,11 +38,11 @@ def get_current_tax_and_net_amount(self, item, tax, item_tax_map):
         cached_total = _get_cached_mtv_row_total(self, item, tax)
         current_net_amount = self.doc.get("taxes")[cint(tax.row_id) - 1].grand_total_for_current_item
         if cached_total is not None:
-            tax_base_amount = abs(round(cached_total/(1+(tax_rate/100)),2))
+            tax_base_amount = (round(cached_total/(1+(tax_rate/100)),2))
         else:
             tax_base_amount = current_net_amount
 
-        current_tax_amount = abs(round((tax_rate / 100.0) * tax_base_amount,2))
+        current_tax_amount = (round((tax_rate / 100.0) * tax_base_amount,2))
 
     elif tax.charge_type == "On Item Quantity":
         current_tax_amount = tax_rate * item.qty
@@ -62,10 +62,10 @@ def _get_rrp_floored_amount(self, item, tax_rate):
         self._rrp_cache[item.item_code] = _fetch_rrp(self, item.item_code)
 
     rrp = self._rrp_cache[item.item_code]
-    item_rate = item.price_list_rate + abs(round((item.price_list_rate*(tax_rate/100)),2))
+    item_rate = item.price_list_rate + (round((item.price_list_rate*(tax_rate/100)),2))
     if rrp and rrp > flt(item_rate):
-        rrp_tax = abs(round(rrp / (1+(tax_rate/100)), 2))
-        tax_base_amount = abs(round(rrp_tax* flt(item.qty),2))
+        rrp_tax = (round(rrp / (1+(tax_rate/100)), 2))
+        tax_base_amount = (round(rrp_tax* flt(item.qty),2))
         return tax_base_amount
 
     return item.net_amount
@@ -105,7 +105,7 @@ def _cache_mtv_row_total(self, item, tax, tax_base_amount, tax_rate):
     elif not hasattr(self, "_mtv_row_totals"):
         self._mtv_row_totals = {}
 
-    item_rate = item.price_list_rate + abs(round((item.price_list_rate*(tax_rate/100)),2))
+    item_rate = item.price_list_rate + (round((item.price_list_rate*(tax_rate/100)),2))
     if rrp and rrp > flt(item_rate):
         self._mtv_row_totals.setdefault(item.name, {})[tax.idx] = tax_base_amount
 
