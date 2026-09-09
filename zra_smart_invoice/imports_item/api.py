@@ -205,7 +205,7 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
         if not task_cd or not dcl_de or not items:
             frappe.throw("Missing required fields: taskCd, dclDe, or importItemList")
 
-        _create_stock_entry(items)
+        _create_stock_entry(items, task_cd, dcl_de, dcl_no)
         zra_response = update_import_items(task_cd, dcl_de, items)
         if zra_response.get("resultCd") != "000":
             frappe.throw(f"ZRA Update Imports Error: {zra_response.get('resultMsg')}")
@@ -299,7 +299,7 @@ def _create_import_logs(
         )
         doc.insert(ignore_permissions=True)
 
-def _create_stock_entry(items: List[Dict[str, Any]]):
+def _create_stock_entry(items: List[Dict[str, Any]], task_cd: str, dcl_de: str, dcl_no: str):
     stock_entry_items = []
 
     for item in items:
@@ -333,7 +333,14 @@ def _create_stock_entry(items: List[Dict[str, Any]]):
     se = frappe.new_doc("Stock Entry")
     se.stock_entry_type = "Material Receipt"
     se.purpose = "Material Receipt"
-    se.remarks = "ZRA Import Processing"
+    se.remarks = (
+        f"This Stock Entry was automatically generated from an approved "
+        f"ZRA import declaration to record the receipt of imported goods "
+        f"into inventory. "
+        f"Declaration No: {dcl_no or 'N/A'} | "
+        f"Task Code: {task_cd} | "
+        f"Declaration Date: {dcl_de}."
+    )
     se.set("items", stock_entry_items)
     
     se.flags.ignore_zra_sync = True 
