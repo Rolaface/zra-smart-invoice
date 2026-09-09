@@ -10,6 +10,7 @@ from zra_smart_invoice.config import is_zra_enabled, get_zra_config
 from zra_smart_invoice.client import make_vsdc_request
 from zra_smart_invoice.utils import _get_next_sar_no, _zra_user_id
 from custom_api.utils.response import send_response, send_response_list
+from zra_smart_invoice.stock.zra_stock import _build_stock_items_payload, _build_stock_master_payload
 
 
 def _format_import_item(item: Dict[str, Any], user_id: str) -> Dict[str, Any]:
@@ -205,9 +206,9 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
             frappe.throw("Missing required fields: taskCd, dclDe, or importItemList")
 
         _create_stock_entry(items)
-
         zra_response = update_import_items(task_cd, dcl_de, items)
-
+        if zra_response.get("resultCd") != "000":
+            frappe.throw(f"ZRA Update Imports Error: {zra_response.get('resultMsg')}")
 
         _create_import_logs(data, items, status_label="Processed")
 
@@ -312,12 +313,11 @@ def _create_stock_entry(items: List[Dict[str, Any]]):
 
             quantity = flt(item.get("qty", 0))
             total_foreign_amount = flt(item.get("invcFcurAmt", 0))
+            if quantity <= 0:
+                continue
 
-            unit_rate = (
-                total_foreign_amount / quantity
-                if quantity > 0
-                else 0.0
-            )
+            total_foreign_amount = flt(item.get("invcFcurAmt", 0))
+            unit_rate = total_foreign_amount / quantity
 
             stock_entry_items.append({
                 "item_code": item_code,
@@ -345,182 +345,20 @@ def _create_stock_entry(items: List[Dict[str, Any]]):
 
     _sync_import_stock_to_zra(se)
 
-
 def _sync_import_stock_to_zra(doc):
     """
-    Directly builds and sends the stock items and stock master payload to ZRA.
+    Builds and sends the stock items and stock master payload to ZRA.
     Hardcodes '01' as the Stock In/Out Type for Imports.
     """
-    item_list = []
-    total_taxable = 0.0
-    total_tax = 0.0
-    total_amt = 0.0
+    stock_items_payload = _build_stock_items_payload(doc, "01")
+    
+    result = make_vsdc_request("stock/saveStockItems", stock_items_payload)
+    if result.get("resultCd") != "000":
+        frappe.throw(f"ZRA Stock Items Error ({result.get('resultCd')}): {result.get('resultMsg')} — Sync Failed.")
 
-    for idx, item in enumerate(doc.items, start=1):
-        qty = abs(flt(item.transfer_qty) if hasattr(item, "transfer_qty") else flt(item.qty))
-        rate = abs(flt(item.basic_rate) or flt(item.valuation_rate))
-
-        item_doc = frappe.get_cached_doc("Item", item.item_code)
-        
-        item_class_code = frappe.db.get_value("Custom Item Details", {"parent": item.item_code}, "hsn_code") or ""
-        pkg_unit_name = frappe.db.get_value("Custom Item Details", {"parent": item.item_code}, "packaging_uom")
-        qty_unit_name = item.get("stock_uom") or item_doc.stock_uom
-
-        pkg_unit_cd = _resolve_pkg_unit_code(pkg_unit_name)
-        qty_unit_cd = _resolve_qty_unit_code(qty_unit_name)
-
-        mapped_tax = {}
-        item_tax_template_name = item.get("item_tax_template") or (
-            item_doc.taxes[0].item_tax_template if item_doc.taxes else None
-        )
-
-        if item_tax_template_name:
-            tax_template = frappe.get_cached_doc("Item Tax Template", item_tax_template_name)
-            from zra_smart_invoice.modules.item.utils import get_map_taxes
-            mapped_tax = get_map_taxes(tax_template)
-
-        from zra_smart_invoice.modules.sales_invoice.utils import cascade_forward
-        prc, unit_breakdown = cascade_forward(rate, mapped_tax)
-        sply_amt = abs(round(prc * qty, 2))
-
-        from zra_smart_invoice.config.constant import _ALL_TAX_FIELDS, SALES_INVOICE_CATEGORY_FIELD_MAP
-        tax_fields = dict(_ALL_TAX_FIELDS)
-        for category, amounts in unit_breakdown.items():
-            cfg = SALES_INVOICE_CATEGORY_FIELD_MAP.get(category)
-            if cfg:
-                code = mapped_tax[category]["tax_code"]
-                tax_fields[cfg["cat_field"]] = code
-                tax_fields[cfg["taxbl_field"]] = abs(round(amounts["base"] * qty, 4))
-                tax_fields[cfg["amt_field"]] = abs(round(amounts["tax"] * qty, 4))
-
-        vatCatCd = tax_fields.get("vatCatCd") or None
-        iplCatCd = tax_fields.get("iplCatCd") or None
-        tlCatCd = tax_fields.get("tlCatCd") or None
-        exciseTxCatCd = tax_fields.get("exciseTxCatCd") or None
-
-        vatAmt = tax_fields.get("vatAmt", 0.0)
-        iplAmt = tax_fields.get("iplAmt", 0.0)
-        tlAmt = tax_fields.get("tlAmt", 0.0)
-        exciseTxAmt = tax_fields.get("exciseTxAmt", 0.0)
-
-        taxblAmt = tax_fields.get("vatTaxblAmt", 0.0)
-        taxAmt = round(vatAmt + iplAmt + tlAmt + exciseTxAmt, 2)
-
-        total_taxable += taxblAmt
-        total_tax += taxAmt
-        total_amt += sply_amt
-
-        item_list.append({
-            "itemSeq": idx,
-            "itemCd": item.item_code,
-            "itemClsCd": item_class_code,
-            "itemNm": item.item_name or item.item_code,
-            "pkgUnitCd": pkg_unit_cd,
-            "pkg": 0.0,
-            "qtyUnitCd": qty_unit_cd,
-            "qty": qty,
-            "prc": rate,
-            "splyAmt": sply_amt,
-            "totDcAmt": 0.0,
-            "taxblAmt": taxblAmt,
-            
-            # Extended Tax Categories
-            "vatCatCd": vatCatCd,
-            "iplCatCd": iplCatCd,
-            "tlCatCd": tlCatCd,
-            "exciseTxCatCd": exciseTxCatCd,
-            
-            # Extended Tax Amounts
-            "vatAmt": vatAmt,
-            "iplAmt": iplAmt,
-            "tlAmt": tlAmt,
-            "exciseTxAmt": exciseTxAmt,
-            "taxAmt": taxAmt,
-            
-            "totAmt": sply_amt,
-            "bcd": "",
-        })
-
-    posting_date = getdate(doc.posting_date).strftime("%Y%m%d")
-    config = get_zra_config() or {}
-
-    stock_items_payload = {
-        "tpin": config.get("tpin"),
-        "bhfId": config.get("bhf_id"),
-        "sarNo": _get_next_sar_no(),
-        "orgSarNo": 0,
-        "regTyCd": "M",              
-        "sarTyCd": "01",
-        "ocrnDt": posting_date,
-        "totItemCnt": len(item_list),
-        "totTaxblAmt": round(total_taxable, 4),
-        "totTaxAmt": round(total_tax, 4),
-        "totAmt": round(total_amt, 2),
-        "remark": (doc.get("remarks", "") or doc.get("purpose", ""))[:400],
-        "regrId": doc.owner or "Admin",
-        "regrNm": doc.owner or "Admin",
-        "modrNm": doc.modified_by or "Admin",
-        "modrId": doc.modified_by or "Admin",
-        "itemList": item_list
-    }
-
-    stock_items_result = make_vsdc_request("stock/saveStockItems", stock_items_payload)
-    if stock_items_result.get("resultCd") != "000":
-        frappe.throw(
-            f"ZRA Stock Items Error ({stock_items_result.get('resultCd')}): "
-            f"{stock_items_result.get('resultMsg')} — Sync Failed."
-        )
-
-    stock_item_list = []
-    processed_items = set()
-
-    for item in doc.items:
-        if item.item_code in processed_items:
-            continue
-            
-        processed_items.add(item.item_code)
-
-        # Because SE is already submitted, the actual_qty in the Bin is the final quantity.
-        bin_qtys = frappe.db.get_all(
-            "Bin", 
-            filters={"item_code": item.item_code}, 
-            pluck="actual_qty"
-        )
-        current_rsd_qty = sum(flt(qty) for qty in bin_qtys) if bin_qtys else 0.0
-
-        stock_item_list.append({
-            "itemCd": item.item_code,
-            "rsdQty": round(current_rsd_qty, 2)
-        })
-
-    stock_master_payload = {
-        "tpin": config.get("tpin"),
-        "bhfId": config.get("bhf_id"),
-        "regrId": doc.owner or "Admin",
-        "regrNm": doc.owner or "Admin",
-        "modrNm": doc.modified_by or "Admin",
-        "modrId": doc.modified_by or "Admin",
-        "stockItemList": stock_item_list
-    }
-
-    stock_master_result = make_vsdc_request("stockMaster/saveStockMaster", stock_master_payload)
-    if stock_master_result.get("resultCd") != "000":
-        frappe.throw(
-            f"ZRA Stock Master Error ({stock_master_result.get('resultCd')}): "
-            f"{stock_master_result.get('resultMsg')} — Sync Failed."
-        )
+    master_payload = _build_stock_master_payload(doc)
+    master_result = make_vsdc_request("stockMaster/saveStockMaster", master_payload)
+    if master_result.get("resultCd") != "000":
+        frappe.throw(f"ZRA Stock Master Error ({master_result.get('resultCd')}): {master_result.get('resultMsg')} — Sync Failed.")
 
     frappe.logger().info(f"✅ ZRA Import Stock Sync Successful | Stock Entry: {doc.name}")
-
-def _resolve_qty_unit_code(uom_name):
-    if not uom_name:
-        return "U" 
-    zra_code = frappe.db.get_value("UOM", uom_name, "common_code")
-    return zra_code if zra_code else "U"
-
-
-def _resolve_pkg_unit_code(pkg_uom_name):
-    if not pkg_uom_name:
-        return "BX" 
-    zra_code = frappe.db.get_value("Packaging Unit Of Measure", pkg_uom_name, "code")
-    return zra_code if zra_code else "BX"
