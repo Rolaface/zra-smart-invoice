@@ -7,7 +7,7 @@ from frappe.utils import cint, flt, getdate, now, now_datetime
 
 from zra_smart_invoice.client import make_vsdc_request
 from zra_smart_invoice.config import get_zra_config, is_zra_enabled
-from zra_smart_invoice.utils import _zra_user_id
+from zra_smart_invoice.utils import _zra_user_id, _get_next_sar_no
 from custom_api.utils.response import send_response, send_response_list
 
 
@@ -35,11 +35,6 @@ STOCK_IN_OUT_TYPE_MAP = {
     "Write Off": "15",
     "Adjustment Out": "16",
 }
-
-
-def _get_next_sar_no() -> int:
-    """Generates a unique Stock Accounting Record Number (sarNo)."""
-    return int(time.time())
 
 
 def _format_stock_item_row(item: Dict[str, Any], idx: int) -> Dict[str, Any]:
