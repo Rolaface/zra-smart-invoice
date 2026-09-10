@@ -1,3 +1,4 @@
+from zra_smart_invoice.utils import sanitize_zra_message
 from zra_smart_invoice.modules.purchase_invoice.utils import build_purchase_sales_items, create_purchase_sales_response
 from custom_api.api.selling.sales_invoice.utils import validate_receivable_account_for_currency
 from custom_api.utils.response import send_old_response
@@ -66,9 +67,10 @@ def make_pi_from_purchase_sale(payload):
                                 http_status=404
                             )
     except Exception as e:
+        error = sanitize_zra_message(str(e))
         return send_old_response(
                                 status="fail",
-                                message=str(e),
+                                message=error,
                                 status_code=500,
                                 http_status=500
                             )

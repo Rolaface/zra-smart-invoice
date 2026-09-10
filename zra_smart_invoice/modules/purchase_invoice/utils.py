@@ -4,7 +4,7 @@ import frappe
 
 def build_purchase_sales_items(items):
 
-    po_items = []
+    pi_items = []
 
     for item in items:
         item_code = item.get("mapped_erp_item")
@@ -29,9 +29,9 @@ def build_purchase_sales_items(items):
             "item_tax_template": item_tax_template.get("name", None) if item_tax_template else None,
         }
 
-        po_items.append(item_dict)
+        pi_items.append(item_dict)
 
-    return po_items
+    return pi_items
 
 def create_purchase_sales_response(payload):
     now_dt = frappe.utils.now_datetime()
@@ -55,4 +55,5 @@ def create_purchase_sales_response(payload):
     payload.pop("transaction_progress")
     for item in payload.get("itemList"):
         item["taxAmt"] = item.get("vatAmt")
+        item["vatCatCd"] = item.get("vatCatCd") if item.get("vatCatCd") else None
     return payload

@@ -13,7 +13,7 @@ def create_pi_item_payload(item, qty, item_doc, mapped_tax):
     for category, amounts in unit_breakdown.items():
         cfg = PURCHASE_INVOICE_CATEGORY_FIELD_MAP[category]
         code = mapped_tax[category]["tax_code"]
-        tax_fields[cfg["cat_field"]] = code
+        tax_fields[cfg["cat_field"]] = code if code else ""
         tax_fields[cfg["taxbl_field"]] = abs(round(amounts["base"] * qty, 4))
         tax_fields[cfg["amt_field"]] = abs(round(amounts["tax"] * qty, 4))
 
