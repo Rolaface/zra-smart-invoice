@@ -72,7 +72,25 @@ def get_import_items(
 
         response = make_vsdc_request("imports/selectImportItems", payload)
 
-        items = response.get("data", {}).get("itemList", [])
+        if response.get("resultCd") != "000":
+            result_code = response.get("resultCd") or "UNKNOWN"
+            result_message = response.get("resultMsg") or "ZRA rejected the request."
+            return send_response(
+                status="fail",
+                message=f"ZRA Error ({result_code}): {result_message}",
+                data={
+                    "resultCd": response.get("resultCd"),
+                    "resultMsg": response.get("resultMsg"),
+                    "resultDt": response.get("resultDt"),
+                },
+                status_code=400,
+                http_status=400,
+            )
+
+        # ZRA may return `data: null` for a response without records.  Do not
+        # dereference it as a mapping, even when the response is successful.
+        zra_data = response.get("data") or {}
+        items = zra_data.get("itemList", []) if isinstance(zra_data, dict) else []
 
         # Search
         if search:
