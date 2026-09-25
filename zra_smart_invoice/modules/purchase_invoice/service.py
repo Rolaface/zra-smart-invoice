@@ -57,7 +57,12 @@ def make_pi_from_purchase_sale(payload):
         pi_doc.run_method("calculate_taxes_and_totals")
 
         pi_doc.insert(ignore_permissions=True)
-        pi_doc.submit()
+
+        try:
+            pi_doc.submit()
+        except Exception:
+            delete_failed_automatic_pi(pi_doc)
+            raise
 
     except frappe.DoesNotExistError:
         return send_old_response(
@@ -74,3 +79,29 @@ def make_pi_from_purchase_sale(payload):
                                 status_code=500,
                                 http_status=500
                             )
+
+
+def delete_failed_automatic_pi(pi_doc):
+    if not pi_doc or not pi_doc.get("name"):
+        return
+
+    if not pi_doc.flags.get("zra_automatic_invoice"):
+        return
+
+    try:
+        if not frappe.db.exists("Purchase Invoice", pi_doc.name):
+            return
+
+        frappe.delete_doc(
+            "Purchase Invoice",
+            pi_doc.name,
+            force=True,
+            ignore_permissions=True,
+            ignore_on_trash=True,
+            delete_permanently=True,
+        )
+    except Exception:
+        frappe.log_error(
+            frappe.get_traceback(),
+            f"ZRA Automatic Purchase Invoice Cleanup Failed | {pi_doc.name}",
+        )

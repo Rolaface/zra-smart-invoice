@@ -856,6 +856,8 @@ def on_purchase_invoice_submit(doc, method):
                             payload["cisInvcNo"] = doc.name
                             is_automatic_invoice = True
 
+        doc.flags.zra_automatic_invoice = is_automatic_invoice
+
         if not is_automatic_invoice:
             payload = _build_purchase_payload(doc)
         if not payload:
