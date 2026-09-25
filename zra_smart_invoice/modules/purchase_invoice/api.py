@@ -28,6 +28,7 @@ def save_purchase_sales():
 
         if payload.get("transaction_progress") == "Rejected":
             new_payload = create_purchase_sales_response(payload)
+            frappe.log_error(f"Purchase Sale new Payload --> {new_payload}")
             result = make_vsdc_request("trnsPurchase/savePurchase", new_payload)
 
             if result.get("resultCd") and result.get("resultCd") == "000":
