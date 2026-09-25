@@ -4,7 +4,8 @@ import frappe
 from typing import Any, Dict, List, Optional, Tuple
 
 def _zra_user_id(max_len=20):
-    user = frappe.session.user or "Administrator"
+    # user = frappe.session.user or "Administrator"
+    user = "Administrator"
     if "@" in user:
         user = user.split("@")[0]
     return user[:max_len]
