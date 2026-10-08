@@ -183,10 +183,10 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
             "itemClsCd": item_class_code,
             "itemNm": item.item_name or item.item_code,
             "pkgUnitCd": pkg_unit_cd,
-            "pkg": 0.0,
+            "pkg": 1,                         #@TODO: Determine the correct package quantity.
             "qtyUnitCd": qty_unit_cd,
             "qty": qty,
-            "prc": rate,
+            "prc": prc,
             "splyAmt": sply_amt,
             "totDcAmt": 0.0,
             "taxblAmt": taxblAmt,
