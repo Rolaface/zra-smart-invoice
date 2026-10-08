@@ -24,7 +24,10 @@ def make_vsdc_request(endpoint, payload):
 
     # frappe.logger().info(f"ZRA Request → {url}")
     print(f"ZRA Request → {url}")
-
+    frappe.log_error(
+        title="ZRA VSDC Request",
+        message=f"Sending request to {url} with payload: {payload}"
+    )
     try:
         response = requests.post(
             url,
