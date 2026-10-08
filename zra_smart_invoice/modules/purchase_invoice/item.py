@@ -14,14 +14,14 @@ def create_pi_item_payload(item, qty, item_doc, mapped_tax):
         cfg = PURCHASE_INVOICE_CATEGORY_FIELD_MAP[category]
         code = mapped_tax[category]["tax_code"]
         tax_fields[cfg["cat_field"]] = code if code else ""
-        tax_fields[cfg["taxbl_field"]] = abs(round(amounts["base"] * qty, 4))
-        tax_fields[cfg["amt_field"]] = abs(round(amounts["tax"] * qty, 4))
+        tax_fields[cfg["taxbl_field"]] = abs(round(amounts["base"] * qty, 2))
+        tax_fields[cfg["amt_field"]] = abs(round(amounts["tax"] * qty, 2))
 
     discounted_net_price = None
     discount_amount = 0
     if item.discount_amount or item.discount_percentage:
-        discount_amount = abs(round(tot_amt * (item.discount_percentage / 100), 4))
-        discounted_net_price = abs(round(tot_amt - discount_amount, 4))
+        discount_amount = abs(round(tot_amt * (item.discount_percentage / 100), 2))
+        discounted_net_price = abs(round(tot_amt - discount_amount, 2))
 
         reverse_breakdown = cascade_reverse(discounted_net_price, mapped_tax)
         for category, amounts in reverse_breakdown.items():
