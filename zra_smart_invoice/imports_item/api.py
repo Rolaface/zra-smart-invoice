@@ -335,7 +335,7 @@ def _create_stock_entry(items: List[Dict[str, Any]], task_cd: str, dcl_de: str, 
                 continue
 
             total_foreign_amount = flt(item.get("invcFcurAmt", 0))
-            unit_rate = total_foreign_amount / quantity
+            unit_rate = total_foreign_amount * flt(item.get("invcFcurExcrt") or 1) / quantity
 
             stock_entry_items.append({
                 "item_code": item_code,
