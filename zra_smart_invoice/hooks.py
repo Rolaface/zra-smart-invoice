@@ -56,6 +56,9 @@ doc_events = {
     "Customer": {
             "validate": "zra_smart_invoice.patches.customer.before_validate_hooks.before_validate",
         },
+    "Warehouse": {
+        "validate": "zra_smart_invoice.modules.warehouse.validate.validate",
+    },
 }
 
 scheduler_events = {
