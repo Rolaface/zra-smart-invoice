@@ -30,6 +30,14 @@ def on_stock_transaction_submit(doc, method):
                 payloads_to_send.append(pos_payload)
             if neg_payload.get("itemList"):
                 payloads_to_send.append(neg_payload)
+        elif doc.doctype == "Stock Entry" and doc.purpose in ("Repack", "Manufacture"):
+            out_payload = _build_stock_items_payload(doc, "14", row_filter="source_only")
+            in_payload = _build_stock_items_payload(doc, "05", row_filter="target_only")
+
+            if out_payload.get("itemList"):
+                payloads_to_send.append(out_payload)
+            if in_payload.get("itemList"):
+                payloads_to_send.append(in_payload)
         else:
             zra_sar_type = _get_zra_sar_type(doc)
             if not zra_sar_type:
@@ -94,13 +102,18 @@ def _get_zra_sar_type(doc):
         return mapping.get(doc.stock_entry_type)
 
     return None
-def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
+def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None, row_filter=None):
     item_list = []
     total_taxable = 0.0
     total_tax = 0.0
     total_amt = 0.0
 
     for idx, item in enumerate(doc.items, start=1):
+        if row_filter == "source_only" and not (item.get("s_warehouse") and not item.get("t_warehouse")):
+            continue
+        if row_filter == "target_only" and not (item.get("t_warehouse") and not item.get("s_warehouse")):
+            continue
+
         if doc.doctype == "Stock Reconciliation":
             current_qty = flt(item.current_qty)
             new_qty = flt(item.qty)
@@ -211,6 +224,8 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
     cust_bhf_id = None
     if is_transfer:
         bhf_id, cust_bhf_id = _get_transfer_branch_ids(doc)
+    elif row_filter:
+        bhf_id = _get_processing_branch_id(doc, row_filter)
 
     return {
         "tpin": config.get("tpin"),
@@ -249,6 +264,27 @@ def _get_transfer_branch_ids(doc):
         )
 
     return source_code, target_code
+
+def _get_processing_branch_id(doc, row_filter):
+
+    field = "s_warehouse" if row_filter == "source_only" else "t_warehouse"
+    other = "t_warehouse" if row_filter == "source_only" else "s_warehouse"
+    warehouses = {item.get(field) for item in doc.items if item.get(field) and not item.get(other)}
+
+    codes = set()
+    for wh in warehouses:
+        code = _get_warehouse_code(wh)
+        if not code:
+            frappe.throw(f"ZRA Warehouse Code is missing for warehouse {wh}.")
+        codes.add(code)
+
+    if len(codes) > 1:
+        frappe.throw(
+            f"{'Raw material' if row_filter == 'source_only' else 'Finished product'} warehouses "
+            f"belong to different ZRA branches ({', '.join(sorted(codes))}). Use warehouses of one branch."
+        )
+
+    return codes.pop() if codes else None
 
 def _get_warehouse_code(warehouse):
     if not warehouse:

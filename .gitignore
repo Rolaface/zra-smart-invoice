@@ -53,3 +53,7 @@ jspm_packages/
 
 # Aider AI Chat
 .aider*
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
