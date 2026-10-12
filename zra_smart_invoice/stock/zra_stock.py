@@ -210,7 +210,7 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
     return {
         "tpin": config.get("tpin"),
         "bhfId": "000" if is_transfer else config.get("bhf_id"),
-        "custBhfId": "001" if is_transfer else None,
+        "custBhfId": "002" if is_transfer else None,
         "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",
