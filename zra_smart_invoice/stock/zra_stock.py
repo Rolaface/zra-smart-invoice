@@ -205,10 +205,12 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
 
     posting_date = getdate(doc.posting_date).strftime("%Y%m%d")
     config = get_zra_config() or {}
+    is_transfer = zra_sar_type == "13"
 
     return {
         "tpin": config.get("tpin"),
-        "bhfId": config.get("bhf_id"),
+        "bhfId": "000" if is_transfer else config.get("bhf_id"),
+        "custBhfId": "001" if is_transfer else None,
         "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",
