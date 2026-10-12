@@ -223,11 +223,11 @@ def process_imported_declarations(**kwargs) -> Dict[str, Any]:
         if not task_cd or not dcl_de or not items:
             frappe.throw("Missing required fields: taskCd, dclDe, or importItemList")
 
-        _create_stock_entry(items, task_cd, dcl_de, dcl_no)
         zra_response = update_import_items(task_cd, dcl_de, items)
         if zra_response.get("resultCd") != "000":
             frappe.throw(f"ZRA Update Imports Error: {zra_response.get('resultMsg')}")
 
+        _create_stock_entry(items, task_cd, dcl_de, dcl_no)
         _create_import_logs(data, items, status_label="Processed")
 
         frappe.db.commit()

@@ -18,7 +18,8 @@ def make_vsdc_request(endpoint, payload):
     if not payload.get("tpin"):
         payload["tpin"] = config["tpin"]
 
-    payload["bhfId"] = config["bhf_id"]
+    if not payload.get("bhfId"):
+        payload["bhfId"] = config["bhf_id"]
 
     url = f"{config['vsdc_url']}/{endpoint}"
 

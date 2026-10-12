@@ -207,10 +207,15 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
     config = get_zra_config() or {}
     is_transfer = zra_sar_type == "13"
 
+    bhf_id = config.get("bhf_id")
+    cust_bhf_id = None
+    if is_transfer:
+        bhf_id, cust_bhf_id = _get_transfer_branch_ids(doc)
+
     return {
         "tpin": config.get("tpin"),
-        "bhfId": "000" if is_transfer else config.get("bhf_id"),
-        "custBhfId": "002" if is_transfer else None,
+        "bhfId": bhf_id,
+        "custBhfId": cust_bhf_id,
         "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",
@@ -227,6 +232,28 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None):
         "modrId": doc.modified_by or "Admin",
         "itemList": item_list,
     }
+
+def _get_transfer_branch_ids(doc):
+
+    first_row = doc.items[0] if doc.items else {}
+    source_wh = doc.get("from_warehouse") or first_row.get("s_warehouse")
+    target_wh = doc.get("to_warehouse") or first_row.get("t_warehouse")
+
+    source_code = _get_warehouse_code(source_wh)
+    target_code = _get_warehouse_code(target_wh)
+
+    if not source_code or not target_code:
+        frappe.throw(
+            f"ZRA Warehouse Code is missing for "
+            f"{'source warehouse ' + str(source_wh) if not source_code else 'target warehouse ' + str(target_wh)}."
+        )
+
+    return source_code, target_code
+
+def _get_warehouse_code(warehouse):
+    if not warehouse:
+        return None
+    return frappe.db.get_value("Warehouse", warehouse, "custom_warehouse_code")
 
 def _build_stock_master_payload(doc):
 
