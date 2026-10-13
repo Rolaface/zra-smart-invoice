@@ -21,6 +21,7 @@ def on_stock_transaction_submit(doc, method):
 
     try:
         payloads_to_send = []
+        branch_wise_stock_master = False
 
         if doc.doctype == "Stock Reconciliation":
             pos_payload = _build_stock_items_payload(doc, "06", recon_filter="positive")
@@ -38,6 +39,7 @@ def on_stock_transaction_submit(doc, method):
                 payloads_to_send.append(out_payload)
             if in_payload.get("itemList"):
                 payloads_to_send.append(in_payload)
+            branch_wise_stock_master = True
         else:
             zra_sar_type = _get_zra_sar_type(doc)
             if not zra_sar_type:
@@ -45,6 +47,7 @@ def on_stock_transaction_submit(doc, method):
 
             if zra_sar_type == "13":
                 payloads_to_send.extend(_build_transfer_payloads(doc))
+                branch_wise_stock_master = _get_transfer_mode() in ("2", "3")
             else:
                 se_payload = _build_stock_items_payload(doc, zra_sar_type)
                 if se_payload.get("itemList"):
@@ -66,19 +69,24 @@ def on_stock_transaction_submit(doc, method):
                 )
             print(f"🚀 ~ ZRA Stock Items Response: {stock_items_result}")
 
-        stock_master_payload = _build_stock_master_payload(doc)
-        print("🚀 ~ on_stock_transaction_submit ~ stock_master_payload:")
-        print(json.dumps(stock_master_payload, indent=4))
+        if branch_wise_stock_master:
+            stock_master_payloads = _build_branch_stock_master_payloads(doc)
+        else:
+            stock_master_payloads = [_build_stock_master_payload(doc)]
 
-        stock_master_result = make_vsdc_request("stockMaster/saveStockMaster", stock_master_payload)
+        for stock_master_payload in stock_master_payloads:
+            print("🚀 ~ on_stock_transaction_submit ~ stock_master_payload:")
+            print(json.dumps(stock_master_payload, indent=4))
 
-        if stock_master_result.get("resultCd") != "000":
-            frappe.throw(
-                f"ZRA Stock Master Error ({stock_master_result.get('resultCd')}): "
-                f"{stock_master_result.get('resultMsg')} — Sync Failed."
-            )
+            stock_master_result = make_vsdc_request("stockMaster/saveStockMaster", stock_master_payload)
 
-        print(f"🚀 ~ ZRA Stock Master Response: {stock_master_result}")
+            if stock_master_result.get("resultCd") != "000":
+                frappe.throw(
+                    f"ZRA Stock Master Error ({stock_master_result.get('resultCd')}): "
+                    f"{stock_master_result.get('resultMsg')} — Sync Failed."
+                )
+
+            print(f"🚀 ~ ZRA Stock Master Response: {stock_master_result}")
         print(f"✅ ZRA Stock Sync Successful | {doc.doctype}: {doc.name}")
 
         frappe.logger().info(f"✅ ZRA Stock Sync Successful | {doc.doctype}: {doc.name}")
@@ -109,12 +117,12 @@ def _build_transfer_payloads(doc):
     """
     Builds the saveStockItems payload(s) for a Material Transfer, depending on
     zra_stock_transfer_mode in site config:
-      single        → one "13" request: bhfId = source, custBhfId = target
-      split         → "13" out of source (custBhfId = target)
-                      + "04" into target (custBhfId = source)
-      split_no_cust → same as split, but custBhfId is None on both
+      "1" → one "13" request: bhfId = source, custBhfId = target
+      "2" → "13" out of source (custBhfId = target)
+            + "04" into target (custBhfId = source)
+      "3" → same as "2", but custBhfId is None on both
     """
-    mode = (get_zra_config() or {}).get("stock_transfer_mode") or "1"
+    mode = _get_transfer_mode()
     source_code, target_code = _get_transfer_branch_ids(doc)
 
     if mode == "1":
@@ -126,7 +134,7 @@ def _build_transfer_payloads(doc):
     else:
         frappe.throw(
             f"Invalid zra_stock_transfer_mode '{mode}'. "
-            "Use one of: single, split, split_no_cust."
+            "Use one of: 1, 2, 3."
         )
 
     payloads = []
@@ -323,6 +331,66 @@ def _get_warehouse_code(warehouse):
     if not warehouse:
         return None
     return frappe.db.get_value("Warehouse", warehouse, "custom_warehouse_code")
+
+def _get_transfer_mode():
+    return (get_zra_config() or {}).get("stock_transfer_mode") or "1"
+
+def _build_branch_stock_master_payloads(doc):
+
+    sl_updated = frappe.db.exists(
+        "Stock Ledger Entry",
+        {"voucher_no": doc.name, "voucher_type": doc.doctype}
+    )
+
+    branch_changes = {}
+    for row in doc.items:
+        row_qty = flt(row.transfer_qty) if hasattr(row, "transfer_qty") else flt(row.qty)
+
+        for warehouse, sign in ((row.get("s_warehouse"), -1), (row.get("t_warehouse"), 1)):
+            if not warehouse:
+                continue
+
+            code = _get_warehouse_code(warehouse)
+            if not code:
+                frappe.throw(f"ZRA Warehouse Code is missing for warehouse {warehouse}.")
+
+            item_changes = branch_changes.setdefault(code, {})
+            item_changes[row.item_code] = item_changes.get(row.item_code, 0.0) + sign * row_qty
+
+    payloads = []
+    for code, item_changes in branch_changes.items():
+        branch_warehouses = frappe.db.get_all(
+            "Warehouse",
+            filters={"custom_warehouse_code": code},
+            pluck="name"
+        )
+
+        stock_item_list = []
+        for item_code, net_change in item_changes.items():
+            bin_qtys = frappe.db.get_all(
+                "Bin",
+                filters={"item_code": item_code, "warehouse": ["in", branch_warehouses]},
+                pluck="actual_qty"
+            )
+            rsd_qty = sum(flt(qty) for qty in bin_qtys)
+            if not sl_updated:
+                rsd_qty += net_change
+
+            stock_item_list.append({
+                "itemCd": item_code,
+                "rsdQty": round(rsd_qty, 2)
+            })
+
+        payloads.append({
+            "bhfId": code,
+            "regrId": doc.owner or "Admin",
+            "regrNm": doc.owner or "Admin",
+            "modrNm": doc.modified_by or "Admin",
+            "modrId": doc.modified_by or "Admin",
+            "stockItemList": stock_item_list
+        })
+
+    return payloads
 
 def _build_stock_master_payload(doc):
 

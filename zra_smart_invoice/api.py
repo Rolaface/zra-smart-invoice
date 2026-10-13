@@ -15,11 +15,39 @@ from frappe.utils import cint, flt
 from frappe import _
 from zra_smart_invoice.modules.item.utils import get_map_taxes
 from zra_smart_invoice.utils import _safe_set, _zra_user_id, _get_next_sar_no
+from zra_smart_invoice.stock.zra_stock import _get_warehouse_code
 
 def get_item_type_name(item_type_code: str) -> str:
     for name, code in ITEM_TYPE_CODE_MAP.items():
         if code == item_type_code:
             return name
+
+def _get_invoice_branch_id(doc):
+    warehouses = {
+        item.get("warehouse") or doc.get("set_warehouse")
+        for item in doc.items
+        if frappe.get_cached_value("Item", item.item_code, "is_stock_item")
+    }
+    warehouses.discard(None)
+    warehouses.discard("")
+
+    if not warehouses:
+        return get_zra_config().get("bhf_id")
+
+    codes = set()
+    for warehouse in warehouses:
+        code = _get_warehouse_code(warehouse)
+        if not code:
+            frappe.throw(f"ZRA Warehouse Code is missing for warehouse {warehouse}.")
+        codes.add(code)
+
+    if len(codes) > 1:
+        frappe.throw(
+            f"Invoice items belong to different ZRA branches ({', '.join(sorted(codes))}). "
+            "Use warehouses of one branch."
+        )
+
+    return codes.pop()
 
 def _build_invoice_payload(doc):
     invoice_type = (
@@ -263,6 +291,8 @@ def _build_invoice_payload(doc):
 
         payload["principalId"] = principal_id
 
+    payload["bhfId"] = _get_invoice_branch_id(doc)
+
     return payload
 
 # ═══════════════════════════════════════════════════════════════════
@@ -453,7 +483,7 @@ def _build_sales_stock_items_payload(doc, stock_items):
     
     return {
         "tpin": config.get("tpin"),
-        "bhfId": config.get("bhf_id"),
+        "bhfId": _get_invoice_branch_id(doc),
         "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",
@@ -498,7 +528,7 @@ def _build_sales_stock_master_payload(doc, stock_items):
     user_id = _zra_user_id()
     return {
         "tpin": config.get("tpin"),
-        "bhfId": config.get("bhf_id"),
+        "bhfId": _get_invoice_branch_id(doc),
         "regrId": user_id,
         "regrNm": user_id,
         "modrId": user_id,
@@ -658,6 +688,7 @@ def _build_purchase_payload(doc):
     now_dt      = frappe.utils.now_datetime()
 
     return {
+        "bhfId":        _get_invoice_branch_id(doc),
         "cisInvcNo":    doc.name,
         "orgInvcNo":    None,
 
@@ -787,7 +818,7 @@ def _build_purchase_stock_items_payload(doc, stock_items):
     
     return {
         "tpin": config.get("tpin"),
-        "bhfId": config.get("bhf_id"),
+        "bhfId": _get_invoice_branch_id(doc),
         "sarNo": _get_next_sar_no(),
         "orgSarNo": 0,
         "regTyCd": "M",
@@ -827,7 +858,7 @@ def _build_purchase_stock_master_payload(doc, stock_items):
     config = get_zra_config()
     user_id = _zra_user_id()
     return {
-        "tpin": config.get("tpin"), "bhfId": config.get("bhf_id"),
+        "tpin": config.get("tpin"), "bhfId": _get_invoice_branch_id(doc),
         "regrId": user_id, "regrNm": user_id, "modrId": user_id, "modrNm": user_id,
         "stockItemList": stock_item_list
     }
@@ -857,6 +888,8 @@ def on_purchase_invoice_submit(doc, method):
                             is_automatic_invoice = True
 
         doc.flags.zra_automatic_invoice = is_automatic_invoice
+        if is_automatic_invoice:
+            payload["bhfId"] = _get_invoice_branch_id(doc)
 
         if not is_automatic_invoice:
             payload = _build_purchase_payload(doc)
