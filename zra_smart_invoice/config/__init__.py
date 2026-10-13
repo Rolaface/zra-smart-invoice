@@ -21,5 +21,7 @@ def get_zra_config():
         "bhf_id": frappe.conf.get("zra_bhf_id", "000"),
         "dvc_srl_no": frappe.conf.get("zra_dvc_srl_no"),
         "vsdc_url": frappe.conf.get("zra_vsdc_url", "").rstrip("/"),
-        "environment": frappe.conf.get("zra_environment", "sandbox")
+        "environment": frappe.conf.get("zra_environment", "sandbox"),
+        # single | split | split_no_cust — see stock/zra_stock.py
+        "stock_transfer_mode": frappe.conf.get("zra_stock_transfer_mode", "1"),
     }

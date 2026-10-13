@@ -42,10 +42,13 @@ def on_stock_transaction_submit(doc, method):
             zra_sar_type = _get_zra_sar_type(doc)
             if not zra_sar_type:
                 return
-            
-            se_payload = _build_stock_items_payload(doc, zra_sar_type)
-            if se_payload.get("itemList"):
-                payloads_to_send.append(se_payload)
+
+            if zra_sar_type == "13":
+                payloads_to_send.extend(_build_transfer_payloads(doc))
+            else:
+                se_payload = _build_stock_items_payload(doc, zra_sar_type)
+                if se_payload.get("itemList"):
+                    payloads_to_send.append(se_payload)
 
         if not payloads_to_send:
             return 
@@ -102,7 +105,41 @@ def _get_zra_sar_type(doc):
         return mapping.get(doc.stock_entry_type)
 
     return None
-def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None, row_filter=None):
+def _build_transfer_payloads(doc):
+    """
+    Builds the saveStockItems payload(s) for a Material Transfer, depending on
+    zra_stock_transfer_mode in site config:
+      single        → one "13" request: bhfId = source, custBhfId = target
+      split         → "13" out of source (custBhfId = target)
+                      + "04" into target (custBhfId = source)
+      split_no_cust → same as split, but custBhfId is None on both
+    """
+    mode = (get_zra_config() or {}).get("stock_transfer_mode") or "1"
+    source_code, target_code = _get_transfer_branch_ids(doc)
+
+    if mode == "1":
+        legs = [("13", source_code, target_code)]
+    elif mode == "2":
+        legs = [("13", source_code, target_code), ("04", target_code, source_code)]
+    elif mode == "3":
+        legs = [("13", source_code, None), ("04", target_code, None)]
+    else:
+        frappe.throw(
+            f"Invalid zra_stock_transfer_mode '{mode}'. "
+            "Use one of: single, split, split_no_cust."
+        )
+
+    payloads = []
+    for sar_type, bhf_id, cust_bhf_id in legs:
+        payload = _build_stock_items_payload(
+            doc, sar_type, bhf_id=bhf_id, cust_bhf_id=cust_bhf_id
+        )
+        if payload.get("itemList"):
+            payloads.append(payload)
+    return payloads
+
+
+def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None, row_filter=None, bhf_id=None, cust_bhf_id=None):
     item_list = []
     total_taxable = 0.0
     total_tax = 0.0
@@ -218,14 +255,10 @@ def _build_stock_items_payload(doc, zra_sar_type, recon_filter=None, row_filter=
 
     posting_date = getdate(doc.posting_date).strftime("%Y%m%d")
     config = get_zra_config() or {}
-    is_transfer = zra_sar_type == "13"
 
-    bhf_id = config.get("bhf_id")
-    cust_bhf_id = None
-    if is_transfer:
-        bhf_id, cust_bhf_id = _get_transfer_branch_ids(doc)
-    elif row_filter:
+    if not bhf_id and row_filter:
         bhf_id = _get_processing_branch_id(doc, row_filter)
+    bhf_id = bhf_id or config.get("bhf_id")
 
     return {
         "tpin": config.get("tpin"),
